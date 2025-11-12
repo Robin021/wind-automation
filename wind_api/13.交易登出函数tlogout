@@ -1,0 +1,21 @@
+13.交易登出函数tlogout
+w.tlogout(LogonID, options)
+根据账号登录时的logonID退出登录
+参数说明
+参数	类型	可选	默认值	说明
+LogonID	str	否	无	logon登录返回或 tquery('LogonID')查询返回，输入LogonID登出，输入LogonID登出。登出时调用LogonID即可，只有单个交易登录时可缺省。
+options	str	是	”“	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+注:
+w.tlogout的登录参数LogonID支持的格式为“0”、0、LogonID = "1".
+只有一个交易登录时，登出可不输入LogonID。
+返回说明
+该函数返回WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回登出信息字段对应的具体值, 如.Data=[[1],[0],[logout]]
+Field	指标列表	返回登录信息的字段，其中：
+LogonID：登录返回的ID
+ErrorCode：返回登录错误码。正常登录错误码为0，
+ErrorMsg：返回登录错误信息
+
+例如: 终端账号为w0817573登录期权模拟交易账户.Fields=[LogonID,LogonAccount,AccountType,ErrorCode,ErrorMsg]

@@ -1,0 +1,64 @@
+8. 获取板块日序列数据函数WSES
+w.wses(codes, fields, beginTime, endTime, options)
+用来获取沪深股票、香港股票、全球股票的板块的历史日序列数据，包括依据板块个股数据计算的板块日行情数据、基本面数据以及盈利预测数据等。
+参数说明
+参数	类型	可选	默认值	说明
+codes	str	否	无	支持获取单板块或多板块如："a001010100"、["a001010200","a001010200"]、
+fields	str	否	无	仅支持单指标如："sec_close_avg"
+beginTime	str	是	截止日期	为空默认为截止日期如: "2016-01-01"、“20160101”、“2016/01/01”、"-5D"(当前日期前推5个交易日)、datetime/date格式
+endTime	str	是	当前系统日期	如: "2016-01-05"、“20160105”、“2016/01/05”、"-2D"(当前日期前推2个交易日) 、datetime/date格式
+options	str	是	""	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+集成在options中的参数
+options以字符串的形式集成了多个参数。以下列举了一些经常被用到的参数：
+参数	类型	可选	默认值	说明
+Fill	str	是	"Blank"	空值填充方式。参数值含义如下：
+Previous：沿用前值，
+Blank：返回空值
+
+如需选择自设数值填充，在options添加“ShowBlank=X", 其中X为自设数。
+Period	str	是	"D"	取值周期。参数值含义如下：
+D：天，
+W：周，
+M：月，
+Q：季度，
+S：半年，
+Y：年
+Days	str	是	"Trading"	日期选项。参数值含义如下：
+Weekdays：工作日,
+Alldays： 日历日,
+Trading：交易日
+TradingCalendar	str	是	"SSE"	交易日对应的交易所。参数含义如下：
+SSE : 上海证券交易所,
+SZSE: 深圳证券交易所,
+CFFE: 中金所,
+TWSE: 台湾证券交易所,
+DCE: 大商所，
+NYSE: 纽约证券交易所,
+CZCE: 郑商所,
+COMEX: 纽约金属交易所,
+SHFE: 上期所,
+NYBOT: 纽约期货交易所,
+HKEX: 香港交易所,
+CME: 芝加哥商业交易所,
+Nasdaq: 纳斯达克证券交易所,
+NYMEX: 纽约商品交易所,
+CBOT: 芝加哥商品交易所,
+LME: 伦敦金属交易所,
+IPE: 伦敦国际石油交易所
+DynamicTime	str	是	"1"	"0"：使用板块历史成分，"1"：使用板块最新成分
+注:
+wses函数一次性可选取多个板块一个指标来提取日期序列数据；
+wses函数支持Python中的date或datetime时间格式；
+wses函数支持输出DataFrame数据格式，需要函数添加参数usedf=True. 如例1。可以使用usedfdt=True来填充DataFrame输出NaT的日期。
+板块名称或板块ID可通过板块查询工具查找。
+返回说明
+如果不指定usedf=True，该函数将返回一个WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	比如读取上证A股和深证A股近两日的平均收盘价"sec_close_avg"指标数据，返回值为.Data=[[13.00764,13.31552],[ 12.88665,13.19833]]
+Codes	证券代码列表	返回获取数据的板块ID.Codes=[a001010200000000, a001010300000000]
+Field	指标列表	返回获取数据的指标列表.Fields=[sec_close_avg]
+Times	时间列表	返回获取数据的日期序列.Times=[20180828]
+示例说明
+# 提取上证A股和深证A股的当日平均收盘价信息。
+errorCode,data=w.wses("a001010200000000,a001010100000000", "sec_close_avg", "2018-08-21", "2018-08-27", "", usedf=True)

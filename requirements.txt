@@ -1,0 +1,6 @@
+# WindPy 可通过官方 Wind API 安装包提供；macOS 用户可参考 install_windpy.py 脚本将 WindPy.py 链接到当前解释器
+WindPy==3.0.4; sys_platform == "win32"
+pandas>=2.0,<3.0
+openpyxl>=3.1
+PyYAML>=6.0
+pytest>=7.0

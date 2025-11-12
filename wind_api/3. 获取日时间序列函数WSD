@@ -1,0 +1,83 @@
+3. 获取日时间序列函数WSD
+w.wsd（codes, fields, beginTime, endTime, options）
+支持股票、债券、基金、期货、指数等多种证券的基本资料、股东信息、市场行情、证券分析、预测评级、财务数据等各种数据。wsd可以支持取 多品种单指标 或者 单品种多指标 的时间序列数据。
+参数说明
+参数	类型	可选	默认值	说明
+codes	str或list	否	无	证券代码，支持获取单品种或多品种，如“600030.SH”或[“600010.SH”,“000001.SZ”]
+fields	str或list	否	无	指标列表,支持获取单指标或多指标，，如“CLOSE,HIGH,LOW,OPEN”
+beginTime	str或datetime	是	endTime	起始日期，为空默认为截止日期，如: "2016-01-01"、“20160101”、“2016/01/01”、"-5D"(当前日期前推5个交易日)、datetime/date类型
+endTime	str或datetime	是	系统当前日期	如: "2016-01-05"、“20160105”、“2016/01/05”、"-2D"(当前日期前推2个交易日) 、datetime/date类型
+options	str	是	“”	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+集成在options中的参数
+options以字符串的形式集成了多个参数。以下列举了一些常用的参数：
+参数	类型	可选	默认值	说明
+Days	str	是	'Trading'	日期选项，参数值含义如下：
+Weekdays: 工作日，
+Alldays: 日历日，
+Trading: 交易日
+Fill	str	是	'Blank'	空值填充方式。参数值含义如下：
+Previous：沿用前值，
+Blank：返回空值
+
+如需选择自设数值填充，在options添加“ShowBlank=X", 其中X为自设数。
+Order	str	是	'A'	日期排序，“A”：升序，“D”：降序
+Period	str	是	'D'	取值周期。参数值含义如下：
+D：天，
+W：周，
+M：月，
+Q：季度，
+S：半年，
+Y：年
+TradingCalendar	str	是	'SSE'	交易日对应的交易所。参数值含义如下：
+SSE ：上海证券交易所，
+SZSE：深圳证券交易所，
+CFFE：中金所，
+TWSE：台湾证券交易所，
+DCE：大商所，
+NYSE：纽约证券交易所，
+CZCE：郑商所，
+COMEX：纽约金属交易所，
+SHFE：上期所，
+NYBOT：纽约期货交易所，
+HKEX：香港交易所，
+CME：芝加哥商业交易所，
+Nasdaq：纳斯达克证券交易所，
+NYMEX：纽约商品交易所，
+CBOT：芝加哥商品交易所，
+LME：伦敦金属交易所，
+IPE：伦敦国际石油交易所
+Currency	str	是	'Original'	输入币种。参数值含义如下：
+Original：“原始货币”，
+HKD：“港币”，
+USD：“美元”，
+CNY：“人民币”
+PriceAdj	str	是	不复权	股票和基金(复权方式)。参数值含义如下：
+F：前复权，
+B：后复权，
+T：定点复权；债券(价格类型)
+CP：净价，
+DP：全价，
+MP：市价，
+YTM：收益率
+注:
+Fields和Parameter也可以传入list，比如可以用[“CLOSE”,“HIGH”,“LOW”,“OPEN”]替代“CLOSE,HIGH,LOW,OPEN”;
+获取多个证券数据时，Fields只能选择一个。
+日期支持相对日期宏表达方式，日期宏具体使用方式参考'日期宏’部分内容
+options为可选参数，可选参数多个，在参数说明详细罗列。
+wsd函数支持输出DataFrame数据格式，需要函数添加参数usedf=True，可以使用usedfdt=True来填充DataFrame输出NaT的日期。
+返回说明
+如果不指定usedf=True，该函数将返回一个WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回函数获取的数据，比如读取000592.SZ的close指标从'2017-05-08'到'2017-05-18'区间的数据，返回值为.Data=[[5.12,5.16,5.02,4.9,4.91,5.13,5.35,5.42,5.32],[5.3,5.12,5.17,4.98,4.94,4.93,5.1,5.4,5.4]]
+Codes	证券代码列表	返回获取数据的证券代码列表.Codes=[000592.SZ]
+Field	指标列表	返回获取数据的指标列表.Fields=[CLOSE]
+Times	时间列表	返回获取数据的日期序列.Times=[20170508,20170509,20170510,20170511,20170512,20170515,20170516, 20170517,20170518]
+注：以DataFrame 展示数据时，如果取单个标的数据，以指标为维度进行数据展示， 如果取多个标的数据，只能取单个指标，以标的为维度进行数据展示
+示例说明
+# 任取一只国债010107.SH六月份以来的净值历史行情数据
+history_data=w.wsd("010107.SH",
+                   "sec_name,ytm_b,volume,duration,convexity,open,high,low,close,vwap", 
+                   "2018-06-01", "2018-06-11", "returnType=1;PriceAdj=CP", usedf=True) 
+# returnType表示到期收益率计算方法，PriceAdj表示债券价格类型‘
+history_data[1].head()

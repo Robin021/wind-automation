@@ -1,0 +1,27 @@
+wind:
+  broker_id: "0000"
+  department_id: "0"
+  logon_account: "WFT00000001"
+  password: "env:WIND_PWD"
+  account_type: "SHSZ"
+
+strategy:
+  short: 3
+  long: 24
+  n: 24
+  min_history_days: 60
+
+orders:
+  volume_per_trade: 100
+  retry:
+    attempts: 3
+    backoff_seconds: [1, 2, 4]
+
+paths:
+  data_root: "data"
+  log_file: "logs/app.log"
+
+logging:
+  level: "INFO"
+  max_bytes: 1048576
+  backup_count: 10

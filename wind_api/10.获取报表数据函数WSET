@@ -1,0 +1,22 @@
+10.获取报表数据函数WSET
+w.wset(tableName, options)
+用来获取数据集信息，包括板块成分、指数成分、ETF申赎成分信息、分级基金明细、融资标的、融券标的、融资融券担保品、回购担保品、停牌股票、复牌股票、分红送转等报表数据。
+参数说明
+参数	类型	可选	默认值	说明
+tableName	str	否	无	输入获取数据的报表名称，可借助代码生成器生成如：" SectorConstituent ",
+options	str	是	”“	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+注:
+数据集涉及内容较多，并且每个报表名称均不同，建议使用代码生成器生成代码，更方便地获取数据；
+wset函数支持输出DataFrame数据格式，需要函数添加参数usedf = True, 如例2。可以使用usedfdt=True来填充DataFrame输出NaT的日期。
+返回说明
+如果不指定usedf=True，该函数将返回一个WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回函数获取的报表数据，比如读取全部A股2018-08-27的板块成分,返回值为.Data=[[2018-08-27,2018-08-27,…],[ 000001.SZ,000002.SZ,…],[平安银行,万科A,…]
+Codes	证券代码列表	返回获取数据的板块ID.Codes=[1,2,3,4,5,6,7,8,9,10,...]
+Field	指标列表	返回获取数据的指标列表.Fields=[date,wind_code,sec_name]
+Times	时间列表	返回获取数据的日期序列.Times=[20180828]
+示例说明
+# 获取申万一级行业的成分股
+sw_index=w.wset("sectorconstituent","date=2018-06-12;sectorid=a39901011g000000",usedf=True)
+sw_index[1].head(5)

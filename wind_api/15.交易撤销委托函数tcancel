@@ -1,0 +1,36 @@
+15.交易撤销委托函数tcancel
+w.tcancel(OrderNumber, options)
+用于撤销w.torder发出的委托请求
+参数说明
+参数	类型	可选	默认值	说明
+OrderNumber	str	否	无	输入撤销委托对应的委托编号,委托下单时会生成委托编号, 通过w.tquery("Order")可获得委托编号，委托编号在撤销委托时使用。
+options	str	是	""	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+集成在options中的参数
+options以字符串的形式集成了多个参数。以下列举了一些常用的参数：
+参数	类型	可选	默认值	说明
+LogonID	str	是	否	tlogon登录返回或 tquery('LogonID')查询返回，用于区分多个账号同时登录,输入撤单账号对应的登录ID单账户登录可选，多账户登录必选.
+MarketType	str	是	"SH"	输入市场类型，SecurityCode为交易码时需要填写，默认"MarketType=SH"。参数值含义如下：
+参数值含义如下：
+SZ / 0: 证券-深圳,
+SH / 1: 证券-上海,
+OC / 2: 证券-深圳特（三版）,
+HK / 6: 证券-港股,
+CZC / 7: 商品期货(郑州),
+SHF / 8: 商品期货(上海),
+DCE / 9: 商品期货(大连),
+CFE / 10: 股指期货(中金)
+注：
+本命令支持向量操作，也即每个参数都可以使用数组输入，对于只有一个元素的参数会自动扩充；
+只有一个交易登录时，可以不输入LogonID，否则一定需要输入，即用LogonID=xxxx方式输入；
+当用户有很多笔不同市场的下单时，RequestID可能会有重复，此时需要使用MarketType区别，MarketType可以取：0/SZ; 1/SZ; 2/OC; 6/HK; 7/CZC; 8/SHF; 9/DCE; 10/CFE。
+返回说明
+该函数返回WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回撤销信息字段对应的具体值, 如.Data=[[3],[W081757303],[SHO],[0],[]]
+Field	指标列表	返回撤销委托信息的字段，其中:
+OrderNumber：委托编号,
+ErrorCode：错误编号,
+ErrorMsg：错误信息,如: 撤销登录ID为1，委托编号为250的委托
+
+.Fields=[OrderNumber,LogonID,ErrorCode,ErrorMsg]

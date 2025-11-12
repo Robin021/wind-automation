@@ -1,0 +1,50 @@
+7.实时行情数据函数 WSQ
+w.wsq（codes, fields, options, func)
+用来获取股票、债券、基金、期货、指数等选定证券品种的当天指标实时数据，可以一次性请求实时快照数据，也可以通过订阅的方式获取实时数据。
+参数说明
+参数	类型	可选	默认值	说明
+codes	str或list	否	无	证券代码，支持获取单品种或多品种，如："600030.SH,000001.SZ "、["600030.SH","000001.SZ"]'
+fields	str或list	否	无	指标列表,支持获取多指标，，如'CLOSE,HIGH,LOW,OPEN'
+options	str	是	”“	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+func	str	是	None	func默认为None, 此时以一次性快照方式获取数据，func=DemoWSQCallback时, 以订阅的方式实时返回行情数据, DemoWSQCallback的函数定义可参考API帮助中心的案例
+注：
+wsq函数的参数中品种代码、指标和可选参数也可以用list实现；用户可以一次提取或者订阅多个品种数据多个指标；
+wsq函数订阅模式下只返回订阅品种行情有变化的订阅指标, 对没有变化的订阅指标不重复返回实时行情数据；
+wsq订阅时，API发现用户订阅内容发生变化则调用回调函数，并且只把变动的内容传递给回调函数。
+用户自己定义的回调函数格式请参考API帮助中心的案例，回调函数中不应处理复杂的操作；
+wsq函数快照模式支持输出DataFrame数据格式，需要函数添加参数usedf=True，可以使用usedfdt=True来填充DataFrame输出NaT的日期。
+返回说明
+快照模式下函数输出字段解释如下：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回函数获取的快照数据，读取中国平安"601318.SH "的"rt_last,rt_open"指标快照数据.Data=[[54.16],[53.72]]
+Codes	证券代码列表	返回获取数据的证券代码列表.Codes=[601318.SH]
+Field	指标列表	返回获取数据的指标列表.Fields=[open,high]
+Times	时间列表	返回获取数据的日期序列.Times=[20170626 17:50:53]
+​ 订阅模式下函数输出字段解释如下：
+w.wsq运行后，会将行情传入回调函数DemoWSQCallback, 传入数据为WindData类型，具体数据字段信息如下:
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+StateCode	状态ID	返回订阅时的字段，无实质意义..StateCode=1
+RequestID	请求ID	返回订阅的请求ID.RequestID=4
+Code	证券代码列表	返回获取实时数据的品种列表, 只返回行情变动指标对应的品种..Code=[601318.SZ]
+Fileds	字段列表	返回获取的实时数据的指标列表, 只返回行情变动的指标列表.Fields=[RT_OPEN,RT_LAST]
+Times	时间列表	返回获取数据的本地时间戳.Times=[20170626 17:50:53]
+Data	数据列表	返回函数获取的实时行情数据，获取中国平安"601318.SH" 的"rt_last,rt_open"指标订阅数据.Data=[[54.16],[53.72]]
+取消实时行情订阅函数CancelRequest
+w.cancelRequest(RequestID)
+用来根据w.wsq的订阅请求ID来取消订阅
+参数说明
+参数	类型	可选	默认值	说明
+RequestID	int	否	无	输入取消订阅的订阅ID, 支持取消单次订阅和全部订阅.支持格式: 1或0
+注：
+可以像w.cancelRequest(3)一样，输入一个id的数字，而取消某订阅；
+请求ID为0代表取消全部订阅，即输入w.cancelRequest(0)。
+示例说明
+data=w.wsq("600000.SH","rt_low,rt_last_vol",func=DemoWSQCallback);
+#订阅
+#等待回调，用户可以根据实际情况写回调函数
+#....
+#根据刚才wsq返回的请求ID，取消订阅
+w.cancelRequest(data.RequestID)
+

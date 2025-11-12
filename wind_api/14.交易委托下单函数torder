@@ -1,0 +1,81 @@
+14.交易委托下单函数torder
+w.torder(SecurityCode, TradeSide, OrderPrice, OrderVolume, options)
+用于登录账号的委托下单
+参数说明
+参数	类型	可选	默认值	说明
+SecurityCode	str	否	无	输入委托下单证券代码, 如“600000.SH”，可输入交易代码，此时需指定MarketType
+TradeSide	str	否	否	输入委托下单的交易方向, 根据不同品种选择交易方向. 参数值含义如下：
+Buy / 1: 买入开仓、证券买入,
+Short / 2: 卖出开仓,
+Cover / 3: 买入平仓,
+Sell / 4: 卖出平仓、证券卖出,
+CoverToday / 5: 买入平今仓,
+SellToday / 6 卖出平今仓,
+ShortCovered / 7: 备兑开仓,
+CoverCovered / 8: 备兑平仓
+OrderPrice	str或int	否	否	输入委托下单的委托价格格式: “10.12”、10.12
+OrderVolume	str或int	否	否	输入委托下单的委托数量格式：“100”、100
+options	str	是	“”	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+集成在options中的参数
+options以字符串的形式集成了多个参数。以下列举了一些常用的参数：
+参数	类型	可选	默认值	说明
+OrderType	str	是	“LMT”	输入委托方式，默认为限价交易 "OrderType=LMT"。
+参数值含义如下：
+LMT / 0： 限价委托，
+BOC / 1: 对方最优价格委托，
+BOP / 2: 本方最优价格委托，
+ITC / 3: 即时成交剩余撤销，
+B5TC / 4: 最优五档剩余撤销，
+FOK / 5: 全额成交或撤销委托(市价FOK)，
+B5TL / 6: 最优五档剩余转限价，
+ALO: 竞价限价盘，
+ACO: 竞价盘，
+ELO: 增强限价盘，
+SLO: 特别限价盘，
+FOK_LMT: 全额成交或撤销委托(限价FOK)，
+EXE: 期权行权，
+MTL: 市价剩余转限价。
+
+深证支持方式为LMT / 0, BOC / 1, BOP / 2, ITC / 3, B5TC / 4, FOK / 5
+上证支持方式为LMT / 0, B5TC / 4, B5TL / 6
+期权支持方式为LMT / 0, ITC / 3, FOK / 5, FOK_LMT , EXE, MTL
+港股支持方式为LMT / 0, ALO, ACO, ELO, SLO
+期货支持方式为LMT / 0
+HedgeType	str	是	“SPEC”	选择投机套保类型，可选参数。默认为"HedgeType=Spec", 选择套保需要专门的保账号。HedgeType可取值如下：
+Spec：投机
+Hedge：套保
+LogonID	str	是	否	logon登录返回或 tquery('LogonID')查询返回，用于区分多个账号同时登录,输入登录ID, 单账号时可不填，多账号时必选,来自于账户登录的登录ID，如 "LogonID=1"
+MarketType	str	SH	“SH”	输入市场类型，SecurityCode为交易码时需要填写，默认"MarketType=SH",
+参数值含义如下：
+SZ / 0: 证券-深圳,
+SH / 1: 证券-上海,
+OC / 2: 证券-深圳特（三版）,
+HK / 6: 证券-港股,
+CZC / 7: 商品期货(郑州),
+SHF / 8: 商品期货(上海),
+DCE / 9: 商品期货(大连),
+CFE / 10: 股指期货(中金)
+注：
+本命令支持向量操作，也即每个参数都可以使用数组输入，对于只有一个元素的参数会自动扩充；
+只有一个交易登录时，可以不输入LogonID，否则一定需要输入，即用LogonID=xxxx方式输入；
+当用户输入的代码没有带.的市场后缀时，需要提供MarketType，MarketType可以取：0/SZ; 1/SH; 2/OC; 6/HK; 7/CZC; 8/SHF; 9/DCE; 10/CFE;
+通过w.tquery(‘order’,requestid=XXX)查询委托情况;
+期货套保账号时一定需要加上HedgeType=HEDG/1，因为缺省是投机HedgeType =SPEC/0
+返回说明
+该函数返回WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回登录信息字段对应的具体值, 如.Data=[[3],[W081757303],[SHO],[0],[]]
+Field	指标列表	返回委托下单信息的字段。字段含义如下：
+RequestID：请求ID,
+SecurityCode：委托下单的证券代码,
+TradeSide：买卖方向,
+OrderPrice：委托价格,
+OrderVolume：委托数量,
+HedgeType：投机保值类型,
+OrderType：委托类型,
+LogonID：登录账号返回的登录ID,
+ErrorCode：错误ID,若成功则返回0,
+ErrorMsg：报错字符串
+
+例如: 以10.3元委托下单买入000001.SZ 100股. Fields=[RequestID,SecurityCode,TradeSide,OrderPrice,OrderVolume,OrderType,LogonID,ErrorCode,ErrorMsg]

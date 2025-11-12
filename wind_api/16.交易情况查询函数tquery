@@ -1,0 +1,167 @@
+16.交易情况查询函数tquery
+w.tquery(qrycode, options)
+用于查询交易相关信息
+参数说明
+参数	类型	可选	默认值	说明
+queryType	str	否	无	输入需要查询的内容，例如：
+Capital：资金查询,
+Position：持仓查询,
+Order：当日委托查询,
+Trade：当日成交查询,
+Account：股东账号查询,
+LogonID：登录ID查询
+options	str	是	""	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+集成在options中的参数
+options以字符串的形式集成了多个参数。以下列举了一些常用的参数：
+参数	类型	可选	默认值	说明
+LogonID	str	是	否	输入撤单账号对应的登录ID单账户登录可选，多账户登录必选.
+RequestID	str	是	否	输入查询对应的请求ID，请求ID系统自动生成.当日委托查询2/order时可以依据委托torder返回的requestID查询。例如"RequestID=3".
+OrderNumber	str	是	否	输入委托号查询委托，"Qrycode=Order"时有意义，委托号来源于w.tquery("Order")获得的OrderNumber
+MarketType	str	是	"SH"	输入市场类型，SecurityCode为交易码时需要填写，默认"MarketType=SH"。参数含义如下：
+参数值含义如下：
+SZ / 0: 证券-深圳,
+SH / 1: 证券-上海,
+OC / 2: 证券-深圳特（三版）,
+HK / 6: 证券-港股,
+CZC / 7: 商品期货(郑州),
+SHF / 8: 商品期货(上海),
+DCE / 9: 商品期货(大连),
+CFE / 10: 股指期货(中金)
+OrderType	str	是	全部委托	输入查询委托的委托类型，默认是查询全部委托.Withdrawable 可撤
+WindCode	str	是	否	输入查询指定证券的信息"WindCode=002311.SZ", Qrycode=Order/Position/Trade时
+BrokerID	str	是	否	营业部查询4/department时，必填。例如L"BrokerID=0000"。
+注:
+除qrycode外，本命令支持向量操作，也即其他每个参数都可以使用数组输入，对于只有一个元素的参数会自动扩充；
+只有一个交易登录时，可以不输入LogonID，否则一定需要输入，即用LogonID=xxxx方式输入。
+qrycode可取：Capital资金查询；Position持仓查询；Order当日委托查询；Trade当日成交查询； broker 经济商查询； LogonID登录ID查询, Account登录账号查询。
+当日委托查询Order时可以依据委托Order返回的RequestID查询，该查询立即返回，返回服务器已经返回的信息。
+返回说明
+该函数返回WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回查询信息的具体值,
+Field	指标列表	返回查询信息的字段
+当QueryCode =Capital进行股票、期货、期权账号资金查询时, ResFields返回值的字段说明如下：
+股票返回字段	期货返回字段	期权返回字段
+MoneyType：货币类型	MoneyType	MoneyType：货币类型
+AvailableFund：资金可用	AvailableFund	AvailableFund：资金可用
+SecurityValue：持仓市值	BalanceFund：资金余额	BalanceFund：资金余额
+FundAsse：资金资产	FetchFund：可取资金	FundAsset：资金资产
+TotalAsset：总资产	ExerciseMargin：履约保证金	TotalAsset：总资产
+Profit：总盈亏	RealFrozenMarginA：当日开仓预冻结金额	Profit：总盈亏
+FundFrozen：冻结资金	RealFrozenMarginB：当日开仓预冻结保证金和费用	FundFrozen：冻结资金
+OtherFund：其他资金HoldingProfit：盯市盈亏	FetchFund：可取资金	ExerciseMargin：履约保证金
+BuyFund：今买入额	TotalFloatProfit	RealFrozenMarginA：当日开仓预冻结金额
+SellFund：今卖出额	InitRightsBalance	RealFrozenMarginB：当日开仓预冻结保证金和费用
+Remark：说明	FloatRightsBal：浮动客户权益	HoldingProfit：盯市盈亏
+Customer：客户号	RealDrop：盯市平仓盈亏	CurrRightsBalance：当前客户权益
+AssetAccount：资金账号	FrozenFare：冻结费用	CustomerMargin：客户保证金
+LogonID：登录ID	CustomerMargin：客户保证金	Customer：客户号
+ErrorCode：错误码	RealOpenProfit：盯市开仓盈亏	AssetAccount：资金账号
+--	FloatOpenProfit：浮动开仓盈亏	LogonID：登录ID
+--	Interest：预计利息	ErrorCode：错误码
+--	Customer：客户号	--
+--	AssetAccount：资金账号	--
+--	LogonID：登录ID	--
+--	ErrorCode：错误码	--
+--	ErrorMsg：错误信息	--
+当qrycode=Position进行股票、期货、期权账号当日委托查询时, ResFields返回值的字段具体说明如下：
+股票返回字段	期货返回字段	期权返回字段
+SecurityCode：交易品种代码	SecurityCode：交易品种代码	SecurityCode：交易品种代码
+SecurityName：交易品种名称	SecurityName：交易品种名称	SecurityName：交易品种名称
+SecurityBalance：股份余额	CostPrice ：成本价格	SecurityForzen ：股份冻结
+SecurityAvail：股份可用	LastPrice ：最新价格	CostPrice ：成本价格
+SecurityForzen：股份冻结	TradeSide：交易方向	LastPrice：最新价格
+TodayBuyVolume：当日买入量	BeginVolume ：期初数量	TradeSide：交易方向
+TodaySellVolume：当日卖出量	EnableVolume ：可用数量	EnableVolume：可用数量
+SecurityVolume：当前拥股数	TodayRealVolume ：当日可平仓数	TodayOpenVolume ：当日开仓可用数
+CallVolume：可申赎数量	TodayOpenVolume ：当日开仓可用数	TotalFloatProfit：总浮动盈
+CostPrice：成本价格	HoldingProfit ：盯市盈亏	RealFrozenMarginA：当日开仓预冻结金额
+TradingCost：当前成本	TotalFloatProfit ：总浮动盈	MoneyType ：货币类型
+LastPrice：最新价格	PreMargin ：上交易日保证金	LogonID：登录ID
+HoldingValue：市值	MoneyType ：货币类型	OptionType ：期权类型
+Profit：盈亏	LogonID:登录ID	ErrorCode ：错误码
+MoneyType：货币类型	ErrorCode:错误码	ErrorMsg：错误信息
+LogonID:登录ID	ErrorMsg：错误信息	--
+ErrorCode:错误码	--	
+ErrorMsg：错误信息	--	--
+当qrycode=Order进行股票、期货、期权账号当日委托查询时, ResFields返回值的字段具体说明如下：
+股票返回字段	期货返回字段	期权返回字段
+OrderNumber：柜台委托编号	OrderNumber：柜台委托编号	OrderNumber：柜台委托编号
+OrderStatus：委托状态	OrderStatus：委托状态	OrderStatus：委托状态
+SecurityCode：交易品种代码	SecurityCode：交易品种代码	SecurityCode：交易品种代码
+SecurityName：交易品种名称	SecurityName：交易品种名称	SecurityName：交易品种名称
+TradeSide：交易方向	TradeSide：交易方向	TradeSide：交易方向
+OrderPrice：委托价格	OrderPrice：委托价格	OrderPrice：委托价格
+OrderVolume：委托数量	OrderVolume：委托数量	OrderVolume：委托数量
+OrderTime：委托时间	OrderTime：委托时间	OrderTime：委托时间
+TradedPrice：成交均价	TradedPrice：成交均价	TradedPrice：成交均价
+TradedVolume：成交数量	TradedVolume：成交数量	TradedVolume：成交数量
+CancelVolume：撤单数量	CancelVolume：撤单数量	CancelVolume：撤单数量
+LastPrice：最新价格	LastPrice：最新价格	LastPrice：最新价格
+MadeAmt：成交金额	PreMargin ：开仓冻结保证金	MadeAmt：成交金额
+OrderFrozenFund：委托冻结资金	TotalFrozenCosts:冻结总费用	OrderFrozenFund：委托冻结资金
+HedgeType：套保标志	HedgeType：套保标志	HedgeType：套保标志
+MoneyType:货币类型	Remark：说明	MoneyType:货币类型
+Remark:说明	LogonID：登录ID	Remark:说明
+LogonID：登录ID	QryPostStr：请求信号	LogonID：登录ID
+QryPostStr：请求信号	OrderDate：委托日期	QryPostStr：请求信号
+OrderDate：委托日期	ErrorCode：错误码	OptionType：期权类型
+ErrorCode：错误码	ErrorMsg：错误信息	OrderDate：委托日期
+ErrorMsg：错误信息	--	ErrorCode：错误码
+--	--	ErrorMsg：错误信息
+其中：OrderStatus包含Normal(正常)、Cancelled（撤单）、Invalid（无效）、Dealing（处理中）选项
+当qrycode=Trade进行股票、期货、期权账号当日成交查询时, ResFields返回值的字段具体说明如下：
+股票返回字段	期货返回字段	期权返回字段
+OrderNumber：柜台委托编号	OrderNumber：柜台委托编号	OrderNumber：柜台委托编号
+TradedNumber：成交编号	TradedNumber：成交编号TradedNumber：成交编号	
+TradedStatus：成交状态	TradedStatus：委托状态	TradedStatus：委托状态
+SecurityCode：交易品种代码	SecurityCode：交易品种代码	SecurityCode：交易品种代码
+SecurityName：交易品种名称	SecurityName：交易品种名称	SecurityName：交易品种名称
+TradeSide：交易方向	TradeSide：交易方向	TradeSide：交易方向
+TradedTime：委托价格	OrderPrice：委托价格	OrderPrice：委托价格
+OrderVolume：委托数量	OrderVolume：委托数量	OrderVolume：委托数量
+OrderTime：委托时间	OrderTime：委托时间	OrderTime：委托时间
+TradedTime:交易时间	TradedTime:交易时间TradedTime:交易时间	
+TradedPrice：成交均价	TradedPrice：成交均价	TradedPrice：成交均价
+TradedVolume：成交数量	TradedVolume：成交数量	TradedVolume：成交数量
+CancelVolume：撤单数量	CancelVolume：撤单数量	CancelVolume：撤单数量
+LastPrice：最新价格	LastPrice：最新价格	LastPrice：最新价格
+MadeAmt：成交金额	AmountPerHand ：每手吨数	MadeAmt：成交金额
+MoneyType:货币类型HedgeType：套保标志	OrderType:委托类型	
+Remark:说明	TotalFrozenCosts：冻结总费用	MoneyType:货币类型
+LogonID：登录ID	DropProfit：平仓盈亏	Remark:说明
+QryPostStr：请求信号	DropFloatFrofit：平仓浮动盈亏	LogonID：登录ID
+OrderDate：委托日期	Remark:说明	QryPostStr：请求信号
+TradedDate：成交日期	LogonID：登录ID	OptionType：期权类型
+ErrorCode：错误码	QryPostStr：请求信号	OrderDate：委托日期
+ErrorMsg：错误信息	OrderDate：委托日期	TradedDate：成交日期
+--	ErrorCode：错误码	ErrorCode：错误码
+--	ErrorMsg：错误信息	ErrorMsg：错误信息
+其中: TradedStatus包含Normal(正常)、Cancelled（撤单）、Invalid（无效）
+当qrycode=Account进行账号查询时, ResFields返回值的具体说明如下：
+返回码	解释	说明
+ErrorCode	错误码	函数返回的错误码。函数如果成功运行，ErrorCode=0。如果返回码等于其他值，可根据错误码查找错误原因
+Fields	指标列表	字段含义如下：
+ShareholderStatus：股东状态,
+MainShareholderFlag：主股东标志,
+AccountType：账号类型,
+MarketType：市场代码,
+Shareholder：股东代码,
+AssetAccount：资金账号,
+Customer：客户号,
+Seat：席位号,
+LogonID：登录ID,
+ErrorCode：错误码,
+ErrorMsg：错误信息
+Data	数据列表	返回查到信息
+当qrycode=LogonID进行账号查询时, ResFields返回值的具体说明如下：
+返回码	解释	说明
+ErrorCode	错误码	函数返回的错误码。函数如果成功运行，ErrorCode=0。如果返回码等于其他值，可根据错误码查找错误原因
+Fields	指标列表	返回的字段信息。字段含义如下：
+LogonID：登录ID,
+LogonAccount：登录账号,
+AccountType：账号类型,
+ErrorCode：错误码,
+ErrorMsg：错误信息
+Data	数据列表	返回查到信息

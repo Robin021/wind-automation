@@ -1,0 +1,28 @@
+9. 获取板块日截面数据函数WSEE
+w.wsee(codes, fields, options)
+获取沪深股票、香港股票、全球股票选定板块的历史日截面数据，比如取全部A股板块的平均行情数据、平均财务数据等。
+参数说明
+参数	类型	可选	默认值	说明
+codes	str	否	无	支持获取单板块或多板块如："a001010100"、["a001010200","a001010200"]、
+fields	str	否	无	仅支持单指标如："sec_close_avg"
+options	str	是	”“	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+集成在options中的参数
+options以字符串的形式集成了多个参数。以下列举了一些常用的参数：
+参数	类型	可选	默认值	说明
+DynamicTime	str	是	“1”	0：使用板块历史成分，1：使用板块最新成分
+注:
+wsee函数一次只能提取一个交易日数据，但可以提取多个板块和多个指标；
+wsee函数可选参数有很多，unit，currencyType等可借助代码生成器获取；
+wsee函数支持输出DataFrame数据格式，需要函数添加参数usedf=True，如例1。可以使用usedfdt=True来填充DataFrame输出NaT的日期。
+板块名称或板块ID可通过板块查询工具查找。
+返回说明
+如果不指定usedf=True，该函数将返回一个WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	比如读取上证A股和深证A股近两日的平均收盘价"sec_close_avg"指标数据，返回值为.Data=[[13.00764,13.31552],[ 12.88665,13.19833]]
+Codes	证券代码列表	返回获取数据的板块ID.Codes=[a001010200000000, a001010300000000]
+Field	指标列表	返回获取数据的指标列表.Fields=[sec_close_avg]
+Times	时间列表	返回获取数据的日期序列.Times=[20180828 ]
+示例说明
+# 提取上证A股和深证A股的当日平均收盘价信息。
+errorCode,data=w.wsee("a001010200000000,a001010300000000","sec_close_avg","tradeDate=20180827",usedf=True)

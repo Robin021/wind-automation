@@ -1,0 +1,28 @@
+22.获取某一偏移值对应的日期tdaysoffset
+w.tdaysOffset(offset, beginTime, options)
+用于将基准日期前推若干周期得到符合选定日期类型的日期
+参数说明
+参数	类型	可选	默认值	说明
+offset	int	否	否	偏移参数，>0后推，<0前推
+beginTime	str	是	系统当前时间	参照日期，支持日期宏
+options	str	是	""	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+集成在options中的参数
+options以字符串的形式集成了多个参数。以下列举了一些常用的参数：
+参数	类型	可选	默认值	说明
+Days	str	是	'Trading'	日期选项。参数含义如下：
+Weekdays: 工作日
+Alldays：日历日
+Trading：交易日
+Period	str	是	'D'	取值周期。参数值含义如下：
+D：天，
+W：周，
+M：月，
+Q：季度，
+S：半年，
+Y：年
+TradingCalendar	str	是	'SSE'	选择不同交易所的交易日历，默认'SSE'上交所
+示例说明
+# 取从今天往前推10个月的日历日
+import datetime
+today = datetime.date.today() 
+w.tdaysoffset(-10, today.isoformat(), "Period=M;Days=Alldays")

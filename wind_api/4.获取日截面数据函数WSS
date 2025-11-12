@@ -1,0 +1,27 @@
+4.获取日截面数据函数WSS
+w.wss（codes, fields, options）
+同样支持股票、债券、基金、期货、指数等多种证券的基本资料、股东信息、市场行情、证券分析、预测评级、财务数据等各种数据。但是WSS支持取多品种多指标某个时间点的截面数据。
+参数说明
+参数	类型	可选	默认值	说明
+codes	str或list	否	无	证券代码，支持获取单品种或多品种如'600030.SH'或['600010.SH','000001.SZ']
+fields	str或list	否	无	指标列表，支持获取多指标如'CLOSE,HIGH,LOW,OPEN'
+options	str	是	""	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+注:
+wss函数一次只能提取一个交易日或报告期数据，但可以提取多个品种和多个指标；
+wss函数可选参数有很多，rptDate，currencyType，rptType等可借助代码生成器获取；
+wss函数支持输出DataFrame数据格式，需要函数添加参数usedf=True，可以使用usedfdt=True来填充DataFrame输出NaT的日期。
+返回说明
+如果不指定usedf=True，该函数将返回一个WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回函数获取的数据，比如读取"600111.SH,600340.SH,600485.SH" 的"eps_basic,profittogr"指标20161231（即2016年的年报）的数据，返回值为.Data=[[0.025,2.22,0.52],[1.5701,11.4605,51.8106]]
+Codes	证券代码列表	返回获取数据的证券代码列表.Codes=[600111.SH,600340.SH,600485.SH]
+Field	指标列表	返回获取数据的指标列表.Fields=[EPS_BASIC,PROFITTOGR]
+Times	时间列表	返回获取数据的日期序列.Times=[20180824]
+示例说明
+# 取被动指数型基金最新业绩排名
+fund=w.wset("sectorconstituent","date=2018-06-11;sectorid=2001010102000000").Data[1]
+error_code,returns=w.wss(fund, 
+                         "sec_name,return_1w,return_1m,return_3m,return_6m,return_1y,return_ytd,fund_fundmanager",
+                         "annualized=0;tradeDate=20180611",usedf=True)
+returns.head(10)

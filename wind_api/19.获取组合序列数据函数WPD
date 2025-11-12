@@ -1,0 +1,41 @@
+19.获取组合序列数据函数WPD
+w.wpd(PortfolioName, fields, beginTime, endTime, options)
+获取资产管理系统PMS以及组合管理系统AMS一段时间组合的持仓和业绩表现等日序列数据。
+参数说明
+参数	类型	可选	默认值	说明
+PortfolioName	String	否	无	输入组合ID或组合名称, 取自Wind终端PMS或AMS模块.如: "全球投资组合管理演示"
+fields	str	否	否	输入报表的指标名称如: NetHoldingValue
+beginTime	str	是	endTime	输入获取数据的起始日期，为空默认为截止日期如: "2016-01-01"、“20160101”、datetime/date类型
+endTime	str	是	系统当前时间	输入获取数据的截止日期，为空默认为系统当前日期，如: "2016-01-05"、“20160105”、datetime/date类型
+options	str	是	""	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+集成在options中的参数
+options以字符串的形式集成了多个参数。以下列举了一些常用的参数：
+参数	类型	可选	默认值	说明
+view	str	是	否	选择组合管理模块：“AMS” 或“PMS”
+Owner	str	是	否	选择组合创建人, view=PMS且组合是别人共享的时，应给出组合创建人的Wind帐号，如"Owner=W0817573"
+Period	str	是	'D'	取值周期。参数值含义如下：
+D：天，
+W：周，
+M：月，
+Q：季度，
+S：半年，
+Y：年
+Fill	str	是	否	空值填充方式。参数值含义如下：
+Previous：沿用前值，
+Blank：返回空值。
+如需选择自设数值填充，在options添加“ShowBlank=X", 其中X为自设数。
+Currency	str	是	""	选择获取数据的货币类型，默认"Currency = ORIGINAL"。参数值含义如下：
+ORIGINAL：原始货币，
+HKD：港币，
+USD：美元，
+CNY：人民币
+注：
+wpd函数支持输出DataFrame数据格式，需要函数添加参数usedf = True。
+返回说明
+如果不指定usedf=True，该函数将返回一个WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Codes	组合列表	返回获取报表的组合名称
+Field	字段列表	返回获取报表的字段
+Times	组合列表	返回获取报表的本地时间戳
+Data	数据列表	返回查询信息的具体值

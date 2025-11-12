@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+.venv/
+.pytest_cache/
+.coverage
+
+# macOS
+.DS_Store
+
+# Project data
+config.yml
+data/
+logs/
+__pycache__/
+writable/
+
+# Wind / credentials
+.Wind/
+
+# Reports, artifacts
+reports/

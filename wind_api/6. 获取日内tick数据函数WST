@@ -1,0 +1,36 @@
+6. 获取日内tick数据函数WST
+w.wst(codes, fields, beginTime, endTime, options)
+用获取国内六大交易所（上海交易所、深圳交易所、郑商所、上金所、上期所、大商所）证券品种的日内盘口买卖五档快照数据和分时成交数据(tick数据).
+参数说明
+参数	类型	可选	默认值	说明
+codes	str或list	否	无	证券代码，支持获取单品种，如'600030.SH'
+fields	str或list	否	无	指标列表,支持获取单指标或多指标，，如'CLOSE,HIGH,LOW,OPEN'
+beginTime	str或datetime	是	endTime	分钟数据的起始时间，支持字符串、datetime/date如: "2016-01-01 09:00:00"
+endTime	str或datetime	是	当前系统时间	分钟数据的截止时间，支持字符串、datetime/date如: "2016-01-01 15:00:00"，缺省默认当前时间
+options	str	是	""	options以字符串的形式集成多个参数，具体见代码生成器。如无相关参数设置，可以不给option赋值或者使用options=""
+注：
+wst只支持提取单品种，并且品种名带有“.SH”等后缀；
+wst提取的指标fields可以用list实现；
+wst支持国内六大交易(上交所、深交所、大商所、中金所、上期所、郑商所)近七个交易日的tick数据;
+wst函数支持输出DataFrame数据格式，需要函数添加参数usedf=True。
+返回说明
+如果不指定usedf=True，该函数将返回一个WindData对象，包含以下成员：
+返回码	解释	说明
+ErrorCode	错误ID	返回代码运行错误码，.ErrorCode =0表示代码运行正常。若为其他则需查找错误原因.
+Data	数据列表	返回函数获取的tick数据，读取中国平安"601318.SH"的"last,bid1"指标2017-06-13 09:30:00至2017-06-13 9:31:00的tick数据，返回值为.Data=[[9.11,9.11,9.11,9.11,9.11,9.11,9.11,9.11,9.11,9.11,...],[9.11,9.11,9.12,9.11,9.11,9.11,9.11,9.11,9.11,9.12,...]]
+Codes	证券代码列表	返回获取数据的证券代码列表.Codes=[601318.SH]
+Field	指标列表	返回获取数据的指标列表.Fields=[open,high]
+Times	时间列表	返回获取数据的日期序列.Times=[20170601 09:35:00,20170601 09:40:00,20170601 09:45:00,20170601 09:50:00,20170601 09:55:00,20170601 10:00:00]
+示例说明
+# 提取平安银行（000001.SZ）当天的买卖盘数据。
+from datetime import *
+
+# 设置起始时间和截止时间，通过wst接口提取序列数据
+begintime=datetime.strftime(datetime.now(),'%Y-%m-%d 09:30:00')
+endtime=datetime.strftime(datetime.now(),'%Y-%m-%d %H:%M:%S')
+# last最新价，amt成交额，volume成交量
+# bid1 买1价，bsize1 买1量
+# ask1 卖1价, asize1 卖1量
+codes="000001.SZ"
+fields="last,bid1,ask1" 
+w.wst(codes,fields,begintime,endtime)

@@ -1,0 +1,27 @@
+24. 日期宏说明
+通用日期宏
+支持相对日期表达方式，相对日期周期包括:交易日TD、日历日：D、日历周：W、日历月：M、日历季：Q、日历半年：S、日历年：Y。
+相关说明
+以’-’代表前推，数字代表N个周期，只支持整数；后推没有负号，比如’-5D’表示从当前最新日期前推5个日历日；
+截止日期若为’’空值，取系统当前日期；
+可对日期宏进行加减运算，比如’ED-10d’。
+举例：
+起始日期为1个月前，截至日期为最新 StartDate=’-1M’,EndDate=’’
+起始日期为前推10个交易日，截至日期为前推5个交易日 StartDate=’-10TD’,EndDate=’-5TD’
+特殊日期宏
+宏名称	助记符	宏名称	助记符	宏名称	助记符
+截止日期	ED	今年一季	RQ1	本月初	RMF
+开始日期	SD	今年二季	RQ2	本周一	RWF
+去年一季	LQ1	今年三季	RQ3	上周末	LWE
+去年二季	LQ2	最新一期	MRQ	上月末	LME
+去年三季	LQ3	本年初	RYF	上半年末	LHYE
+去年年报	LYR	下半年初	RHYF	上年末	LYE
+上市首日	IPO	--	--	--	--
+# 用日期宏IPO的示例，获取股票600039.SH上市首日至20180611的收盘价
+error_code,data=w.wsd("600039.SH", "close", 'IPO', "2018-06-11", usedf=True)
+data.head()
+# 用日期宏本月初的示例，获取000001.SZ本月初至20180611的收盘价
+from datetime import datetime
+td = datetime.today().strftime("%Y%m%d")
+error_code,data=w.wsd("600039.SH", "close", 'RMF', td, usedf=True)
+data
