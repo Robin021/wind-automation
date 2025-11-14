@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -98,6 +99,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="交易日期 YYYYMMDD（默认今天）",
     )
 
+    dash_parser = subparsers.add_parser("dashboard", help="汇总查看：持仓/待下单/成交 概览，并导出 HTML")
+    dash_parser.add_argument(
+        "--trade-date",
+        help="交易日期 YYYYMMDD（默认今天）",
+    )
+
+    tui_parser = subparsers.add_parser("tui", help="终端 TUI：彩色表格查看持仓/待下单/成交")
+    tui_parser.add_argument(
+        "--trade-date",
+        help="交易日期 YYYYMMDD（默认今天）",
+    )
+    tui_parser.add_argument(
+        "--filter",
+        help="按代码过滤（子串匹配）",
+        default=None,
+    )
+    tui_parser.add_argument(
+        "--rows",
+        type=int,
+        default=30,
+        help="每张表最多显示的行数（默认 30）",
+    )
+
+    ui_parser = subparsers.add_parser("ui-streamlit", help="一键启动 Streamlit Web 面板")
+    ui_parser.add_argument(
+        "--trade-date",
+        help="交易日期 YYYYMMDD（默认今天）",
+    )
+    ui_parser.add_argument(
+        "--port",
+        type=int,
+        default=8501,
+        help="端口（默认 8501）",
+    )
+    ui_parser.add_argument(
+        "--host",
+        default="localhost",
+        help="监听地址（默认 localhost）",
+    )
+
 
     return parser
 
@@ -137,6 +178,12 @@ def main(argv: list[str] | None = None) -> int:
         return handle_reconcile(config, pending_file=args.pending_file, trade_date=args.trade_date)
     if args.command == "run-eod":
         return handle_run_eod(config, Path(args.stocks_file), args.trade_date)
+    if args.command == "dashboard":
+        return handle_dashboard(config, args.trade_date)
+    if args.command == "tui":
+        return handle_tui(config, args.trade_date, args.filter, args.rows)
+    if args.command == "ui-streamlit":
+        return handle_ui_streamlit(config, args.trade_date, args.port, args.host, args.config)
 
     parser.print_help()
     return 1
@@ -327,6 +374,62 @@ def handle_run_eod(config: AppConfig, stocks_file: Path, trade_date: str | None)
     if failed_fetch:
         print("下载失败的代码：", ", ".join(failed_fetch[:5]), "..." if len(failed_fetch) > 5 else "")
     return 0
+
+
+def handle_dashboard(config: AppConfig, trade_date: str | None) -> int:
+    from wind_trader.dashboard import Dashboard
+    trade_date = trade_date or datetime.today().strftime("%Y%m%d")
+    dash = Dashboard(config)
+    summary, html_path = dash.build_console_summary(trade_date)
+    print(summary)
+    return 0
+
+
+def handle_tui(
+    config: AppConfig,
+    trade_date: str | None,
+    filter_text: str | None,
+    rows: int,
+) -> int:
+    from wind_trader.tui import render_tui
+    trade_date = trade_date or datetime.today().strftime("%Y%m%d")
+    render_tui(config, trade_date, filter_text=filter_text, max_rows=rows)
+    return 0
+
+
+def handle_ui_streamlit(
+    config: AppConfig,
+    trade_date: str | None,
+    port: int,
+    host: str,
+    config_path: str,
+) -> int:
+    """Launch Streamlit app with given parameters."""
+    td = trade_date or datetime.today().strftime("%Y%m%d")
+    streamlit_script = Path(__file__).parent / "ui" / "streamlit_app.py"
+    if not streamlit_script.exists():
+        print(f"找不到 Streamlit 脚本：{streamlit_script}")
+        return 1
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(streamlit_script),
+        f"--server.port={port}",
+        f"--server.address={host}",
+        "--",
+        "--config",
+        str(config_path),
+        "--trade-date",
+        td,
+    ]
+    print("启动 Streamlit:", " ".join(cmd))
+    try:
+        return subprocess.run(cmd).returncode
+    except FileNotFoundError:
+        print("未安装 streamlit，请先执行：pip install -r requirements.txt")
+        return 1
 
 
 if __name__ == "__main__":

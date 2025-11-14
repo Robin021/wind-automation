@@ -22,8 +22,7 @@ DEFAULT_FIELDS = [
     "CLOSE",
     "VOLUME",
     "TURN",
-    "CHO",
-    "MACHO",
+    # CHO/MACHO are computed locally; do not request via WSD
 ]
 
 
@@ -58,7 +57,8 @@ class DataFetcher:
                 ",".join(self.fields),
                 start_date,
                 end_date,
-                "Days=Trading;Fill=Previous",
+                # Ensure trading-day series with backfilled previous value; use back-adjusted prices
+                "Days=Trading;Fill=Previous;PriceAdj=B",
                 usedf=True,
             ),
             attempts=3,
@@ -68,6 +68,8 @@ class DataFetcher:
             operation=f"wsd {code}",
         )
         df = self._parse_response(response)
+        # Compute CHO/MACHO locally to avoid relying on Wind built-ins
+        df = self._compute_cho_macho(df)
         df["code"] = code
         df["update_time"] = datetime.utcnow().isoformat()
         df = df.reset_index().rename(columns={"index": "date"})
@@ -102,3 +104,44 @@ class DataFetcher:
         if isinstance(df, pd.DataFrame):
             return df
         raise WindClientError("Unsupported response format from WindPy.")
+
+    def _compute_cho_macho(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Compute CHO and MACHO based on OHLCV.
+
+        Formula (aligned with project requirements):
+          MID := cumulative sum of VOLUME * (2*MATCH - HIGH - LOW) / (HIGH + LOW)
+          CHO := SMA(MID, short) - SMA(MID, long)
+          MACHO := SMA(CHO, n)
+
+        MATCH is approximated using VWAP if available; otherwise CLOSE.
+        """
+        required = ["HIGH", "LOW", "CLOSE", "VOLUME"]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            # If core columns are missing, return as-is; caller will log/handle later
+            logger.warning("Missing columns for CHO/MACHO calculation: %s", ",".join(missing))
+            return df
+
+        price = df["VWAP"] if "VWAP" in df.columns else df["CLOSE"]
+        high = df["HIGH"]
+        low = df["LOW"]
+        vol = df["VOLUME"].fillna(0.0)
+
+        # Avoid invalid divisions; when denominator is zero or NaN, treat multiplier as 0
+        denom = (high + low)
+        with pd.option_context("mode.use_inf_as_na", True):
+            multiplier = (2 * price - high - low) / denom
+            multiplier = multiplier.fillna(0.0)
+        money_flow = multiplier * vol
+        mid = money_flow.cumsum()
+
+        short_w = max(1, int(self.strategy.short))
+        long_w = max(1, int(self.strategy.long))
+        n_w = max(1, int(self.strategy.n))
+
+        cho = mid.rolling(window=short_w, min_periods=1).mean() - mid.rolling(window=long_w, min_periods=1).mean()
+        macho = cho.rolling(window=n_w, min_periods=1).mean()
+
+        df["CHO"] = cho
+        df["MACHO"] = macho
+        return df

@@ -49,24 +49,35 @@ class WindClient:
 
     def tlogon(self, *args: Any, **kwargs: Any) -> Any:
         self.ensure_api()
+        if not hasattr(wind_api, "tlogon"):
+            raise WindClientError(
+                "Trading API not available: current WindPy build lacks tlogon/torder/tquery. "
+                "请在支持交易接口的环境（通常为 Windows/WFT 客户端）运行夜间下单。"
+            )
         result = wind_api.tlogon(*args, **kwargs)
         self._check_response(result, "tlogon")
         return result
 
     def tlogout(self, *args: Any, **kwargs: Any) -> Any:
         self.ensure_api()
+        if not hasattr(wind_api, "tlogout"):
+            raise WindClientError("Trading API not available: missing tlogout")
         result = wind_api.tlogout(*args, **kwargs)
         self._check_response(result, "tlogout")
         return result
 
     def torder(self, *args: Any, **kwargs: Any) -> Any:
         self.ensure_api()
+        if not hasattr(wind_api, "torder"):
+            raise WindClientError("Trading API not available: missing torder")
         result = wind_api.torder(*args, **kwargs)
         self._check_response(result, "torder")
         return result
 
     def tquery(self, *args: Any, **kwargs: Any) -> Any:
         self.ensure_api()
+        if not hasattr(wind_api, "tquery"):
+            raise WindClientError("Trading API not available: missing tquery")
         result = wind_api.tquery(*args, **kwargs)
         self._check_response(result, "tquery")
         return result

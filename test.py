@@ -1,10 +1,6 @@
-from WindPy import *
+from WindPy import w
 
-w = w.start()
-print(w)
-
-print(w.isconnected())
-
- #test WSS function
-ret = w.wss("000001.SZ", "sec_name","")
+w.start()
+print(w.isconnected())  # True 表示连上了 Wind 服务
+ret = w.wss("000001.SZ", "sec_name", "")
 print(ret)
