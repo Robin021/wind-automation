@@ -22,10 +22,10 @@ jobs:
         include:
           - name: backend
             dockerfile: docker/backend.Dockerfile
-            image: ghcr.io/${{ github.repository }}-backend
+            image: ghcr.io/${{ toLower(github.repository) }}-backend
           - name: web
             dockerfile: docker/frontend.Dockerfile
-            image: ghcr.io/${{ github.repository }}-web
+            image: ghcr.io/${{ toLower(github.repository) }}-web
 
     steps:
       - name: Checkout

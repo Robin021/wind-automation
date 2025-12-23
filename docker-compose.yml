@@ -2,7 +2,7 @@ version: "2.4"
 
 services:
   backend:
-    image: ghcr.io/Robin021/wind-automation-backend:latest
+    image: ghcr.io/robin021/wind-automation-backend:latest
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
@@ -18,7 +18,7 @@ services:
       - "8000"
 
   web:
-    image: ghcr.io/Robin021/wind-automation-web:latest
+    image: ghcr.io/robin021/wind-automation-web:latest
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
