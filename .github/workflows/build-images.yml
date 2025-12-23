@@ -9,6 +9,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  IMAGE_REPO: robin021/wind-automation
+
 permissions:
   contents: read
   packages: write
@@ -22,10 +25,10 @@ jobs:
         include:
           - name: backend
             dockerfile: docker/backend.Dockerfile
-            image: ghcr.io/${{ toLower(github.repository) }}-backend
+            image_suffix: backend
           - name: web
             dockerfile: docker/frontend.Dockerfile
-            image: ghcr.io/${{ toLower(github.repository) }}-web
+            image_suffix: web
 
     steps:
       - name: Checkout
@@ -49,7 +52,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ matrix.image }}
+          images: ghcr.io/${{ env.IMAGE_REPO }}-${{ matrix.image_suffix }}
           tags: |
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
