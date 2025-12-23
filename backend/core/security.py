@@ -9,8 +9,12 @@ from passlib.context import CryptContext
 
 from backend.core.config import settings
 
-# 密码哈希上下文
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# 密码哈希上下文：优先使用 bcrypt_sha256，兼容旧 bcrypt 哈希
+pwd_context = CryptContext(
+    schemes=["bcrypt_sha256", "bcrypt"],
+    deprecated="auto",
+    bcrypt__truncate_error=False,
+)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -42,4 +46,3 @@ def decode_access_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
-
