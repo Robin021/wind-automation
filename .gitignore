@@ -26,3 +26,11 @@ writable/
 
 # Reports, artifacts
 reports/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# WeChat Pay certs/keys
+backend/certs/

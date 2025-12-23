@@ -1,0 +1,223 @@
+"""
+信号计算与查询
+"""
+from datetime import date, datetime, timedelta
+import asyncio
+import logging
+from typing import Annotated, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from backend.api.v1.auth import get_current_admin, get_current_user
+from backend.datasources.manager import datasource_manager
+
+import pandas as pd
+from backend.core.database import get_db
+from backend.models.signal import Signal
+from backend.models.stock import Stock
+from backend.models.user import User
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+class SignalSchema(BaseModel):
+    id: int
+    trade_date: date
+    code: str
+    name: Optional[str]
+    signal: str
+    price: Optional[float]
+    note: Optional[str]
+    generated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SignalList(BaseModel):
+    total: int
+    items: List[SignalSchema]
+
+
+@router.post("/run")
+async def run_signals(
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Session = Depends(get_db),
+    trade_date: date = Query(default_factory=date.today),
+):
+    """
+    计算并写入信号
+
+    逻辑：
+    - 行情使用前复权/不复权：按数据源返回（AKShare 已前复权，Tushare 默认不复权）
+    - 成交量单位：股；成交额：元
+    - CHO 参数：short=3, long=24, smooth=24（smooth 未参与信号，仅保留 cho 曲线）
+    - 买入：CHO_t > CHO_{t-1}
+    - 卖出：CHO_t < CHO_{t-1}
+    - 否则：Hold
+    - price 使用当日收盘价
+    """
+    stocks = db.query(Stock).filter(Stock.is_active == True).all()
+    if not stocks:
+        raise HTTPException(status_code=400, detail="无可用股票池")
+
+    # 确保数据源已初始化（不会重复初始化）
+    await datasource_manager.initialize()
+
+    # 在开始计算前，先测试一下是否已经限频
+    # 如果已经限频，等待一段时间再开始
+    logger.info("检测限频状态...")
+    test_code = stocks[0].code if stocks else "000001.SZ"
+    try:
+        test_start = trade_date - timedelta(days=10)  # 只测试最近10天，减少消耗
+        await datasource_manager.get_daily_data(
+            code=test_code,
+            start_date=test_start,
+            end_date=trade_date,
+        )
+        logger.info("限频检测通过，开始计算")
+    except Exception as e:
+        error_msg = str(e)
+        if "每分钟最多访问" in error_msg or "800次" in error_msg:
+            logger.warning("检测到已触发限频，等待 70 秒后开始计算...")
+            await asyncio.sleep(70)
+        else:
+            logger.warning(f"限频检测失败（非限频错误）: {error_msg}")
+
+    now = datetime.utcnow()
+    created = 0
+    updated = 0
+    failed = []
+    api_call_count = 0  # 记录实际 API 调用次数
+
+    # 回看窗口，满足 long/smooth 计算
+    lookback_days = 180
+
+    # 分批拉取，避免触发 Tushare 每分钟限频（800次/分钟）
+    batch_size = 50
+    pause_seconds = 12
+    rate_limit_wait = 70
+    
+    logger.info(f"开始信号计算，共 {len(stocks)} 只股票，理论上需要 {len(stocks)} 次 API 调用")
+
+    for start_idx in range(0, len(stocks), batch_size):
+        batch = stocks[start_idx:start_idx + batch_size]
+        rate_limit_hit = False
+        for idx, s in enumerate(batch):
+            try:
+                # 每只股票之间添加小延迟（除了第一只），进一步降低请求频率
+                if idx > 0:
+                    await asyncio.sleep(0.1)  # 100ms 延迟
+                
+                start_date = trade_date - timedelta(days=lookback_days)
+                data = await datasource_manager.get_daily_data(
+                    code=s.code,
+                    start_date=start_date,
+                    end_date=trade_date,
+                )
+                api_call_count += 1  # 记录 API 调用次数
+                if not data or len(data) < 2:
+                    raise ValueError("行情不足")
+
+                df = pd.DataFrame(data)
+                # 确保日期排序
+                df = df.sort_values("date")
+
+                # 计算 MID，避免除零
+                denom = (df["high"] + df["low"])
+                denom = denom.replace(0, pd.NA)
+                df["mid"] = df["volume"] * (2 * df["close"] - df["high"] - df["low"]) / denom
+
+                short, long, smooth = 3, 24, 24
+                df["cho_short"] = df["mid"].rolling(short, min_periods=1).mean()
+                df["cho_long"] = df["mid"].rolling(long, min_periods=1).mean()
+                df["cho"] = df["cho_short"] - df["cho_long"]
+                # MACHO 可留备用
+                df["macho"] = df["cho"].rolling(smooth, min_periods=1).mean()
+
+                if len(df) < 2:
+                    sig_value = "Hold"
+                else:
+                    cho_now = df["cho"].iloc[-1]
+                    cho_prev = df["cho"].iloc[-2]
+                    if pd.isna(cho_now) or pd.isna(cho_prev):
+                        sig_value = "Hold"
+                    elif cho_now > cho_prev:
+                        sig_value = "Buy"
+                    elif cho_now < cho_prev:
+                        sig_value = "Sell"
+                    else:
+                        sig_value = "Hold"
+
+                price = df["close"].iloc[-1]
+
+                sig = db.query(Signal).filter(Signal.trade_date == trade_date, Signal.code == s.code).first()
+                if sig:
+                    sig.signal = sig_value
+                    sig.price = price
+                    sig.name = s.name
+                    sig.generated_at = now
+                    updated += 1
+                else:
+                    sig = Signal(
+                        trade_date=trade_date,
+                        code=s.code,
+                        name=s.name,
+                        signal=sig_value,
+                        price=price,
+                        note=None,
+                        generated_at=now,
+                    )
+                    db.add(sig)
+                    created += 1
+            except Exception as e:
+                error_msg = str(e)
+                failed.append({"code": s.code, "error": error_msg})
+                # 检测限频错误
+                if "每分钟最多访问" in error_msg or "800次" in error_msg:
+                    rate_limit_hit = True
+                continue
+        
+        # 如果本批遇到限频，等待更长时间
+        if rate_limit_hit:
+            logger.warning(f"检测到限频，等待 {rate_limit_wait} 秒后继续...")
+            await asyncio.sleep(rate_limit_wait)
+        # 分批间暂停，降低限频风险
+        elif start_idx + batch_size < len(stocks):
+            await asyncio.sleep(pause_seconds)
+
+    db.commit()
+    logger.info(f"信号计算完成：实际 API 调用次数 = {api_call_count}，成功 = {created + updated}，失败 = {len(failed)}")
+    return {
+        "message": "信号计算完成",
+        "trade_date": str(trade_date),
+        "created": created,
+        "updated": updated,
+        "failed": failed,
+        "api_call_count": api_call_count,  # 返回实际调用次数，方便排查
+    }
+
+
+@router.get("", response_model=SignalList)
+async def list_signals(
+    _: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    trade_date: Optional[date] = None,
+    code: Optional[str] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """查询信号"""
+    query = db.query(Signal)
+    if trade_date:
+        query = query.filter(Signal.trade_date == trade_date)
+    if code:
+        query = query.filter(Signal.code == code)
+
+    total = query.count()
+    items = query.order_by(Signal.trade_date.desc(), Signal.code).offset(skip).limit(limit).all()
+    return {"total": total, "items": items}
+

@@ -1,0 +1,95 @@
+// 主题色
+:root {
+  --primary-color: #409eff;
+  --success-color: #67c23a;
+  --warning-color: #e6a23c;
+  --danger-color: #f56c6c;
+  --info-color: #909399;
+  
+  --bg-color: #f5f7fa;
+  --bg-dark: #1d1e1f;
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+  
+  --border-color: #dcdfe6;
+  --border-radius: 8px;
+  
+  --header-height: 60px;
+  --sidebar-width: 220px;
+}
+
+// 全局样式
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+}
+
+// 滚动条美化
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 3px;
+  
+  &:hover {
+    background: #909399;
+  }
+}
+
+// 卡片统一样式
+.card {
+  background: #fff;
+  border-radius: var(--border-radius);
+  padding: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
+}
+
+// 页面容器
+.page-container {
+  padding: 20px;
+  min-height: calc(100vh - var(--header-height));
+}
+
+// 页面标题
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+}
+
+// 表格操作按钮
+.table-actions {
+  display: flex;
+  gap: 8px;
+}
+
+// VIP 等级标签颜色
+.vip-tag {
+  &.vip-0 { --el-tag-bg-color: #f4f4f5; --el-tag-border-color: #e9e9eb; --el-tag-text-color: #909399; }
+  &.vip-1 { --el-tag-bg-color: #ecf5ff; --el-tag-border-color: #d9ecff; --el-tag-text-color: #409eff; }
+  &.vip-2 { --el-tag-bg-color: #f0f9eb; --el-tag-border-color: #e1f3d8; --el-tag-text-color: #67c23a; }
+  &.vip-3 { --el-tag-bg-color: #fdf6ec; --el-tag-border-color: #faecd8; --el-tag-text-color: #e6a23c; }
+  &.vip-4 { --el-tag-bg-color: #fef0f0; --el-tag-border-color: #fde2e2; --el-tag-text-color: #f56c6c; }
+}
+

@@ -39,6 +39,50 @@ python manage.py reconcile --trade-date 20250226
 ```
 > `--trade-date` 可缺省（默认当天）。`--stocks-file` 默认 `stocks.xlsx`。
 
+## Web API / 前端开发
+```bash
+# 后端 API（FastAPI）
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 前端（Vite）
+cd frontend
+npm install
+npm run dev
+```
+
+## Docker 部署
+```bash
+# 构建并启动（前端 Nginx + 后端 FastAPI）
+docker compose up -d --build
+```
+- 环境变量：默认读取项目根目录 `.env.local`
+- 数据目录：`./data`、`./logs` 会挂载到容器内
+- 证书目录：`./backend/certs` 需包含微信支付证书/公钥（若使用微信支付回调验签）
+
+## 生产环境变量（.env.local）
+微信支付 V3 需要以下配置（敏感信息请勿提交仓库）：
+```bash
+WECHAT_PAY_MOCK=false
+WECHAT_PAY_MCHID=你的商户号
+WECHAT_PAY_MERCHANT_SERIAL_NO=商户证书序列号
+WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH=backend/certs/apiclient_key.pem
+WECHAT_PAY_API_V3_KEY=32字节APIv3Key
+WECHAT_PAY_NOTIFY_URL=https://你的域名/api/v1/payments/wechat/notify
+WECHAT_PAY_APPID_MP=公众号AppID
+WECHAT_PAY_APPID_MINI=小程序AppID(可选)
+WECHAT_PAY_PLATFORM_CERT_PATH=backend/certs/wechatpay_platform.pem
+WECHAT_PAY_PLATFORM_SERIAL_NO=平台证书序列号或公钥ID
+```
+
+## 用 Docker 启动 Web API
+```bash
+# 构建并启动
+docker compose up -d --build
+
+# 查看日志
+docker compose logs -f backend
+```
+
 ## 可视化仪表盘（Dashboard）
 - 生成仪表盘：
   ```bash
