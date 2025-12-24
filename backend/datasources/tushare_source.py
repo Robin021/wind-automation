@@ -35,7 +35,7 @@ class TushareDataSource(DataSourceBase):
             # 使用自定义域名（若配置）连接 Tushare
             ts.set_token(settings.TUSHARE_TOKEN)
             self._pro = ts.pro_api(settings.TUSHARE_TOKEN)
-            custom_base = getattr(settings, "TUSHARE_BASE_URL", "http://api.tushare.pro")
+            custom_base = getattr(settings, "TUSHARE_BASE_URL", "")
             if custom_base:
                 # 某些版本的 tushare 不接受 base 参数，这里直接覆盖内部 http_url
                 try:

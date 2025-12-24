@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     
     # 数据源
     TUSHARE_TOKEN: str = ""
-    # 可自定义 Tushare 代理域名
-    TUSHARE_BASE_URL: str = "http://api.tushare.pro"
+    # 可自定义 Tushare 域名；留空时使用官方默认（一般是 http://api.waditu.com/dataapi）
+    TUSHARE_BASE_URL: str = ""
     ENABLE_AKSHARE: bool = False
 
     # ============ WeChat Pay (V3) ============
