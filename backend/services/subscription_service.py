@@ -44,16 +44,22 @@ def get_active_subscription(db: Session, user_id: int, now: datetime | None = No
 def get_effective_vip_level(db: Session, user: User, now: datetime | None = None) -> int:
     """
     计算有效 VIP：
-    - 有订阅且未到期：返回订阅 vip_level
+    - 有订阅且未到期：默认返回订阅 vip_level
+    - 若管理员手动修改了 users.vip_level（与订阅记录不一致），则以手动值为准
     - 无订阅记录：回退到 users.vip_level（兼容后台手动设置 VIP）
-    - 有订阅但已过期：返回 0
+    - 有订阅但已过期：默认返回 0；若存在手动值（与订阅记录不同）则使用手动值
     """
     now = now or _utcnow()
     sub = db.query(UserSubscription).filter(UserSubscription.user_id == user.id).first()
     if not sub:
         return user.vip_level
+
+    manual_override = user.vip_level != sub.vip_level
     if sub.expires_at <= now:
-        return 0
+        return user.vip_level if manual_override else 0
+
+    if manual_override:
+        return user.vip_level
     return sub.vip_level
 
 
@@ -90,7 +96,6 @@ def grant_or_extend_subscription(
     db.refresh(sub)
     db.refresh(user)
     return sub
-
 
 
 

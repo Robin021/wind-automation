@@ -28,6 +28,12 @@ const router = createRouter({
           component: () => import('@/views/MyStocks.vue'),
           meta: { title: '我的股票' },
         },
+        {
+          path: 'membership',
+          name: 'Membership',
+          component: () => import('@/views/Subscription.vue'),
+          meta: { title: '会员中心' },
+        },
         // 管理员路由
         {
           path: 'admin/users',
@@ -111,4 +117,3 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
-

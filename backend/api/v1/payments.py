@@ -53,6 +53,7 @@ class PaymentOrderResponse(BaseModel):
     duration_months: int
     amount_fen: int
     status: str
+    is_test: bool
     created_at: datetime
     paid_at: Optional[datetime] = None
 
@@ -308,4 +309,3 @@ async def list_orders_admin(
     total = query.count()
     items = query.order_by(PaymentOrder.created_at.desc()).offset(skip).limit(limit).all()
     return {"total": total, "items": items}
-

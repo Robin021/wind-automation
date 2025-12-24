@@ -25,6 +25,10 @@
           <el-icon><Briefcase /></el-icon>
           <span>我的股票</span>
         </el-menu-item>
+        <el-menu-item index="/membership">
+          <el-icon><Medal /></el-icon>
+          <span>会员中心</span>
+        </el-menu-item>
         
         <template v-if="userStore.isAdmin">
           <el-sub-menu index="admin">
@@ -224,4 +228,3 @@ function handleCommand(command) {
   overflow-y: auto;
 }
 </style>
-

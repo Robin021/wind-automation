@@ -79,15 +79,42 @@ async def get_my_allocations(
     limit: int = Query(50, ge=1, le=500),
 ):
     """获取当前用户的股票分配"""
-    query = db.query(Allocation).filter(Allocation.user_id == current_user.id)
-    
-    if batch_date:
-        query = query.filter(Allocation.batch_date == batch_date)
+    base_query = db.query(Allocation).filter(Allocation.user_id == current_user.id)
+
+    # 默认只返回最新批次的“active”分配，避免累积历史批次导致数量叠加
     if status:
-        query = query.filter(Allocation.status == status)
+        base_query = base_query.filter(Allocation.status == status)
+
+    if batch_date:
+        query = base_query.filter(Allocation.batch_date == batch_date)
+    else:
+        latest_batch = (
+            base_query.with_entities(Allocation.batch_date)
+            .order_by(Allocation.batch_date.desc())
+            .first()
+        )
+        if latest_batch:
+            query = base_query.filter(Allocation.batch_date == latest_batch[0])
+        else:
+            query = base_query
     
-    total = query.count()
-    allocations = query.offset(skip).limit(limit).all()
+    # 按当前有效 VIP 限制返回的数量，避免历史异常/重复分配导致数量超额
+    effective_vip = get_effective_vip_level(db, current_user)
+    stock_limit_cap = get_vip_stock_limit(db, effective_vip)
+    max_allowed = None if stock_limit_cap == -1 else stock_limit_cap
+
+    total_all = query.count()
+    total = min(total_all, max_allowed) if max_allowed is not None else total_all
+
+    data_query = query.order_by(Allocation.id.desc())
+    if max_allowed is not None:
+        if skip >= max_allowed:
+            allocations = []
+        else:
+            page_limit = min(limit, max_allowed - skip)
+            allocations = data_query.offset(skip).limit(page_limit).all()
+    else:
+        allocations = data_query.offset(skip).limit(limit).all()
     
     # 附加股票信息
     items = []
@@ -250,4 +277,3 @@ async def clear_allocations(
     db.commit()
     
     return {"message": f"已清除 {count} 条分配记录"}
-
