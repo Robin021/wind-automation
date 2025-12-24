@@ -2,7 +2,7 @@
 Tushare 数据源
 """
 from typing import List, Dict, Any
-from datetime import date
+from datetime import date, timedelta
 import asyncio
 
 from backend.datasources.base import DataSourceBase, StockQuote, DailyData
@@ -73,7 +73,8 @@ class TushareDataSource(DataSourceBase):
             
             self._is_available = df is not None and len(df) > 0
             if not self._is_available:
-                self._last_error = "无法获取数据"
+                base = getattr(self._pro, "_DataApi__http_url", "unknown")
+                self._last_error = f"无法获取数据（trade_cal 为空，base={base}）"
             else:
                 self._last_error = None
             
@@ -89,35 +90,35 @@ class TushareDataSource(DataSourceBase):
         if not self._is_available:
             raise RuntimeError("Tushare 数据源不可用")
         
-        # Tushare pro 不提供实时行情，使用日线最新数据替代
-        # 或者可以用 ts.get_realtime_quotes()
         try:
-            import tushare as ts
-            
-            # 转换代码格式：600000.SH -> 600000
-            ts_code = code.split('.')[0]
-            
+            # Tushare pro 没有实时行情，这里取最近交易日的日线数据作为近似，避免外网实时接口 403
+            ts_code = self._normalize_code(code)
             loop = asyncio.get_event_loop()
+            today = date.today()
             df = await loop.run_in_executor(
                 None,
-                lambda: ts.get_realtime_quotes(ts_code)
+                lambda: self._pro.daily(
+                    ts_code=ts_code,
+                    start_date=(today - timedelta(days=10)).strftime('%Y%m%d'),
+                    end_date=today.strftime('%Y%m%d'),
+                )
             )
             
             if df is None or df.empty:
-                raise ValueError(f"无法获取 {code} 的行情数据")
+                raise ValueError(f"无法获取 {code} 的日线数据")
             
-            row = df.iloc[0]
+            latest = df.sort_values("trade_date").iloc[-1]
             return StockQuote(
                 code=code,
-                name=row.get('name', ''),
-                open=float(row['open']) if row.get('open') else None,
-                high=float(row['high']) if row.get('high') else None,
-                low=float(row['low']) if row.get('low') else None,
-                close=float(row['price']) if row.get('price') else None,
-                pre_close=float(row['pre_close']) if row.get('pre_close') else None,
-                volume=float(row['volume']) if row.get('volume') else None,
-                amount=float(row['amount']) if row.get('amount') else None,
-                date=row.get('date', ''),
+                name=None,
+                open=float(latest['open']) if latest.get('open') else None,
+                high=float(latest['high']) if latest.get('high') else None,
+                low=float(latest['low']) if latest.get('low') else None,
+                close=float(latest['close']) if latest.get('close') else None,
+                pre_close=float(latest['pre_close']) if latest.get('pre_close') else None,
+                volume=float(latest['vol']) if latest.get('vol') else None,
+                amount=float(latest['amount']) if latest.get('amount') else None,
+                date=latest.get('trade_date', ''),
             )
             
         except Exception as e:
@@ -207,4 +208,3 @@ class TushareDataSource(DataSourceBase):
             
         except Exception as e:
             raise RuntimeError(f"获取股票列表失败: {e}")
-
