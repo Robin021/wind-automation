@@ -21,6 +21,34 @@
       </div>
     </div>
 
+    <el-card style="margin-bottom: 12px">
+      <template #header>
+        <div class="card-header">
+          <span>信号参数</span>
+          <div class="actions">
+            <el-button size="small" @click="loadParams" :loading="paramsLoading">刷新</el-button>
+            <el-button type="primary" size="small" @click="saveParams" :loading="paramsSaving">
+              保存参数
+            </el-button>
+          </div>
+        </div>
+      </template>
+      <el-form inline label-width="80px">
+        <el-form-item label="SHORT">
+          <el-input-number v-model="signalParams.short" :min="1" :max="200" :step="1" />
+        </el-form-item>
+        <el-form-item label="LONG">
+          <el-input-number v-model="signalParams.long" :min="1" :max="400" :step="1" />
+        </el-form-item>
+        <el-form-item label="SMOOTH">
+          <el-input-number v-model="signalParams.smooth" :min="1" :max="400" :step="1" />
+        </el-form-item>
+        <el-form-item>
+          <span class="hint">修改后再点击“计算信号”生效</span>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <el-card>
       <div class="summary">
         <div>当前交易日：{{ tradeDate || '未选择' }}</div>
@@ -133,6 +161,9 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 50
 const showIndicators = ref(true)
+const signalParams = ref({ short: 3, long: 24, smooth: 24 })
+const paramsLoading = ref(false)
+const paramsSaving = ref(false)
 
 const formatNumber = (_row, _column, value) => {
   if (value === null || value === undefined || value === '') return '-'
@@ -156,6 +187,30 @@ async function fetchSignals() {
     console.error(e)
   } finally {
     loading.value = false
+  }
+}
+
+async function loadParams() {
+  paramsLoading.value = true
+  try {
+    const res = await api.get('/signals/params')
+    signalParams.value = res.data
+  } catch (e) {
+    console.error(e)
+  } finally {
+    paramsLoading.value = false
+  }
+}
+
+async function saveParams() {
+  paramsSaving.value = true
+  try {
+    await api.post('/signals/params', signalParams.value)
+    ElMessage.success('参数已保存')
+  } catch (e) {
+    console.error(e)
+  } finally {
+    paramsSaving.value = false
   }
 }
 
@@ -185,11 +240,23 @@ async function runSignals() {
   }
 }
 
-onMounted(fetchSignals)
+onMounted(() => {
+  fetchSignals()
+  loadParams()
+})
 </script>
 
 <style scoped lang="scss">
 .admin-signals {
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+  }
   .header-actions {
     display: flex;
     gap: 12px;
@@ -205,6 +272,10 @@ onMounted(fetchSignals)
     margin-top: 16px;
     display: flex;
     justify-content: flex-end;
+  }
+  .hint {
+    color: var(--text-secondary);
+    font-size: 12px;
   }
 }
 </style>

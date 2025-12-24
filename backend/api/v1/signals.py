@@ -3,6 +3,7 @@
 """
 from datetime import date, datetime, timedelta
 import asyncio
+import json
 import logging
 from typing import Annotated, List, Optional, Tuple
 
@@ -19,9 +20,11 @@ from backend.core.database import get_db
 from backend.models.signal import Signal
 from backend.models.stock import Stock
 from backend.models.user import User
+from backend.models.system_config import SystemConfig
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+DEFAULT_SIGNAL_PARAMS = {"short": 3, "long": 24, "smooth": 24}
 
 
 def _safe_float(value: object) -> Optional[float]:
@@ -100,6 +103,64 @@ class SignalList(BaseModel):
     items: List[SignalSchema]
 
 
+class SignalParams(BaseModel):
+    short: int = 3
+    long: int = 24
+    smooth: int = 24
+
+    class Config:
+        json_schema_extra = {"example": {"short": 3, "long": 24, "smooth": 24}}
+
+
+def _load_signal_params(db: Session) -> SignalParams:
+    rec = db.query(SystemConfig).filter(SystemConfig.key == "signal_params").first()
+    if not rec:
+        return SignalParams(**DEFAULT_SIGNAL_PARAMS)
+    try:
+        data = json.loads(rec.value)
+        return SignalParams(**{**DEFAULT_SIGNAL_PARAMS, **data})
+    except Exception:
+        return SignalParams(**DEFAULT_SIGNAL_PARAMS)
+
+
+def _save_signal_params(db: Session, params: SignalParams) -> SignalParams:
+    payload = params.model_dump()
+    rec = db.query(SystemConfig).filter(SystemConfig.key == "signal_params").first()
+    now = datetime.utcnow()
+    if rec:
+        rec.value = json.dumps(payload)
+        rec.updated_at = now
+    else:
+        rec = SystemConfig(key="signal_params", value=json.dumps(payload), created_at=now, updated_at=now)
+        db.add(rec)
+    db.commit()
+    return params
+
+
+@router.get("/params", response_model=SignalParams)
+async def get_signal_params(
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Session = Depends(get_db),
+):
+    """获取信号参数（管理员）"""
+    return _load_signal_params(db)
+
+
+@router.post("/params", response_model=SignalParams)
+async def update_signal_params(
+    payload: SignalParams,
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Session = Depends(get_db),
+):
+    """更新信号参数（管理员）"""
+    if payload.short < 1 or payload.long < 1 or payload.smooth < 1:
+        raise HTTPException(status_code=400, detail="参数必须大于等于 1")
+    if payload.long < payload.short:
+        raise HTTPException(status_code=400, detail="long 应大于等于 short")
+    params = _save_signal_params(db, payload)
+    return params
+
+
 @router.post("/run")
 async def run_signals(
     _: Annotated[User, Depends(get_current_admin)],
@@ -110,10 +171,9 @@ async def run_signals(
     计算并写入信号
 
     逻辑：
-    - 行情使用前复权/不复权：按数据源返回（AKShare 已前复权，Tushare 默认不复权）
-    - 成交量/成交额按数据源换算为股/元
-    - MATCH 优先使用成交额/成交量（换算为 VWAP），无数据时使用收盘价
-    - CHO 参数：short=3, long=24, smooth=24（smooth 仅用于 MACHO 计算）
+    - 行情使用前复权/不复权：按数据源返回（AKShare 已前复权，Tushare 改为前复权）
+    - 成交量按数据源换算为股；MATCH 使用前复权收盘价
+    - CHO 参数：可配置（默认 short=3, long=24, smooth=24）
     - MID:=SUM(VOLUME*(2*MATCH-HIGH-LOW)/(HIGH+LOW),0)
     - CHO:=MA(MID,SHORT)-MA(MID,LONG)
     - MACHO:=MA(CHO,N)
@@ -155,6 +215,7 @@ async def run_signals(
     updated = 0
     failed = []
     api_call_count = 0  # 记录实际 API 调用次数
+    params = _load_signal_params(db)
 
     # 回看窗口，满足 long/smooth 计算
     lookback_days = 180
@@ -190,7 +251,7 @@ async def run_signals(
                 # 确保日期排序
                 df = df.sort_values("date")
 
-                short, long, smooth = 3, 24, 24
+                short, long, smooth = params.short, params.long, params.smooth
                 (
                     match_price,
                     mid,
