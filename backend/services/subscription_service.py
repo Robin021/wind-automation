@@ -31,6 +31,7 @@ def add_months(dt: datetime, months: int) -> datetime:
 
 
 def get_active_subscription(db: Session, user_id: int, now: datetime | None = None) -> UserSubscription | None:
+    """返回未过期订阅；过期或不存在返回 None"""
     now = now or _utcnow()
     sub = db.query(UserSubscription).filter(UserSubscription.user_id == user_id).first()
     if not sub:
@@ -44,10 +45,16 @@ def get_effective_vip_level(db: Session, user: User, now: datetime | None = None
     """
     计算有效 VIP：
     - 有订阅且未到期：返回订阅 vip_level
-    - 否则：返回 0
+    - 无订阅记录：回退到 users.vip_level（兼容后台手动设置 VIP）
+    - 有订阅但已过期：返回 0
     """
-    sub = get_active_subscription(db, user.id, now=now)
-    return sub.vip_level if sub else 0
+    now = now or _utcnow()
+    sub = db.query(UserSubscription).filter(UserSubscription.user_id == user.id).first()
+    if not sub:
+        return user.vip_level
+    if sub.expires_at <= now:
+        return 0
+    return sub.vip_level
 
 
 def grant_or_extend_subscription(
@@ -83,7 +90,6 @@ def grant_or_extend_subscription(
     db.refresh(sub)
     db.refresh(user)
     return sub
-
 
 
 
