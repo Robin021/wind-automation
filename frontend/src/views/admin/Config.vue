@@ -65,6 +65,20 @@
       </el-alert>
     </el-card>
 
+    <el-card style="margin-bottom: 16px">
+      <template #header>
+        <div class="card-header">
+          <span>免费用户试用期</span>
+        </div>
+      </template>
+      <el-form label-width="160px">
+        <el-form-item label="试用天数">
+          <el-input-number v-model="freeTrialDays" :min="0" :max="365" @change="saveFreeTrial" />
+          <span class="limit-tip">0 表示关闭，超过试用期后 VIP0 不再分配</span>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <el-card>
       <template #header>
         <div class="card-header">
@@ -124,6 +138,7 @@ const initializing = ref(false)
 const vipConfigs = ref([])
 const loadingPrice = ref(false)
 const priceConfigs = ref([])
+const freeTrialDays = ref(0)
 
 async function fetchVipConfigs() {
   loading.value = true
@@ -193,9 +208,29 @@ async function updateVipPrice(price) {
   }
 }
 
+async function fetchFreeTrial() {
+  try {
+    const res = await api.get('/config/free-trial')
+    freeTrialDays.value = res.data.free_trial_days || 0
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+async function saveFreeTrial() {
+  try {
+    await api.post('/config/free-trial', { free_trial_days: freeTrialDays.value || 0 })
+    ElMessage.success('试用期已保存')
+  } catch (e) {
+    console.error(e)
+    fetchFreeTrial()
+  }
+}
+
 onMounted(() => {
   fetchVipConfigs()
   fetchVipPrices()
+  fetchFreeTrial()
 })
 </script>
 

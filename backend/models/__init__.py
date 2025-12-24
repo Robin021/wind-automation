@@ -7,6 +7,7 @@ from backend.models.signal import Signal
 from backend.models.vip_price_config import VipPriceConfig
 from backend.models.user_subscription import UserSubscription
 from backend.models.payment_order import PaymentOrder
+from backend.models.system_config import SystemConfig
 
 __all__ = [
     "User",
@@ -17,5 +18,5 @@ __all__ = [
     "VipPriceConfig",
     "UserSubscription",
     "PaymentOrder",
+    "SystemConfig",
 ]
-

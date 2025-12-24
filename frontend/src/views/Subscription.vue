@@ -178,7 +178,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '@/api'
 
@@ -189,6 +189,9 @@ const priceConfigs = ref([])
 const subscription = ref(null)
 const orders = ref([])
 const payInfo = ref(null)
+const pollingTimer = ref(null)
+const pollingTarget = ref(null)
+const pollingAttempts = ref(0)
 
 const fallbackConfigs = [
   { level: 1, name: 'VIP1', stock_limit: 10, description: '基础升级，获取更多股票。' },
@@ -278,6 +281,40 @@ async function fetchOrders() {
   orders.value = res.data.items || []
 }
 
+function stopPolling() {
+  if (pollingTimer.value) {
+    clearInterval(pollingTimer.value)
+    pollingTimer.value = null
+  }
+  pollingTarget.value = null
+  pollingAttempts.value = 0
+}
+
+async function pollPaymentStatus(targetOutTradeNo) {
+  stopPolling()
+  pollingTarget.value = targetOutTradeNo
+  pollingAttempts.value = 0
+
+  const maxAttempts = 60 // ~3 分钟，如果 3s 一次
+  pollingTimer.value = setInterval(async () => {
+    pollingAttempts.value += 1
+    await Promise.all([fetchSubscription(), fetchOrders()])
+
+    const matched = orders.value.find(o => o.out_trade_no === pollingTarget.value)
+    const paid = matched && matched.status === 'paid'
+    const vipUpgraded = subscription.value && subscription.value.effective_vip >= (matched?.vip_level || 0)
+
+    if (paid || vipUpgraded) {
+      stopPolling()
+      payInfo.value = null
+      ElMessage.success('支付成功，权益已生效')
+    } else if (pollingAttempts.value >= maxAttempts) {
+      stopPolling()
+      ElMessage.info('支付状态轮询已停止，请手动刷新查看最新状态')
+    }
+  }, 3000)
+}
+
 async function refreshAll() {
   loading.value = true
   try {
@@ -299,6 +336,7 @@ async function createOrder(level) {
       payInfo.value = null
     } else {
       ElMessage.success('订单已创建，请完成支付')
+      pollPaymentStatus(res.data.order.out_trade_no)
     }
 
     await fetchSubscription()
@@ -339,6 +377,7 @@ async function mockOpen(level) {
 }
 
 onMounted(refreshAll)
+onBeforeUnmount(stopPolling)
 </script>
 
 <style scoped lang="scss">

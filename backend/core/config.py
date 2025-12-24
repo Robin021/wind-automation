@@ -63,5 +63,8 @@ class Settings(BaseSettings):
         4: {"name": "SVIP", "stock_limit": -1},  # -1 表示不限
     }
 
+    # 免费用户试用期（天），超期后 VIP0 限额降为 0（不再分配），0 表示不启用
+    FREE_TRIAL_DAYS: int = 0  # 若后台配置存在，则后台配置优先
+
 
 settings = Settings()

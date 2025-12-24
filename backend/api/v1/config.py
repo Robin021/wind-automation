@@ -13,6 +13,7 @@ from backend.models.user import User
 from backend.models.vip_config import VipConfig
 from backend.models.vip_price_config import VipPriceConfig
 from backend.api.v1.auth import get_current_admin
+from backend.models.system_config import SystemConfig
 
 router = APIRouter()
 
@@ -55,6 +56,10 @@ class VipPriceResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FreeTrialConfig(BaseModel):
+    free_trial_days: int
 
 
 # ============ Routes ============
@@ -199,3 +204,37 @@ async def delete_vip_price(
     db.commit()
     return {"message": f"VIP{vip_level} 价格配置已删除"}
 
+
+@router.get("/free-trial", response_model=FreeTrialConfig)
+async def get_free_trial_config(
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Session = Depends(get_db),
+):
+    cfg = db.query(SystemConfig).filter(SystemConfig.key == "FREE_TRIAL_DAYS").first()
+    if cfg is None:
+        return {"free_trial_days": getattr(settings, "FREE_TRIAL_DAYS", 0)}
+    try:
+        return {"free_trial_days": max(0, int(cfg.value))}
+    except (TypeError, ValueError):
+        return {"free_trial_days": 0}
+
+
+@router.post("/free-trial", response_model=FreeTrialConfig)
+async def set_free_trial_config(
+    payload: FreeTrialConfig,
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Session = Depends(get_db),
+):
+    """设置免费用户试用期（天），0 表示关闭试用"""
+    if payload.free_trial_days < 0:
+        raise HTTPException(status_code=400, detail="free_trial_days 不能为负数")
+
+    cfg = db.query(SystemConfig).filter(SystemConfig.key == "FREE_TRIAL_DAYS").first()
+    if cfg:
+        cfg.value = str(payload.free_trial_days)
+    else:
+        cfg = SystemConfig(key="FREE_TRIAL_DAYS", value=str(payload.free_trial_days))
+        db.add(cfg)
+    db.commit()
+    db.refresh(cfg)
+    return {"free_trial_days": max(0, int(cfg.value))}

@@ -13,6 +13,9 @@
         <el-button type="primary" @click="showAllocateDialog">
           <el-icon><Share /></el-icon> 执行分配
         </el-button>
+        <el-button @click="showManualDialog" :loading="manualLoading">
+          <el-icon><Edit /></el-icon> 手动分配（VIP0）
+        </el-button>
       </div>
     </div>
     
@@ -160,11 +163,72 @@
         <el-button type="primary" @click="resultDialogVisible = false">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 手动分配对话框 -->
+    <el-dialog v-model="manualDialogVisible" title="手动分配（适用于 VIP0 定制）" width="520px">
+      <el-form label-width="120px">
+        <el-form-item label="分配日期">
+          <el-date-picker
+            v-model="manualForm.batch_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="用户">
+          <el-select v-model="manualForm.user_id" filterable placeholder="选择用户" style="width: 100%">
+            <el-option
+              v-for="user in vip0Users"
+              :key="user.id"
+              :label="`${user.username} (VIP${user.vip_level})`"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="分配模式">
+          <el-radio-group v-model="manualForm.mode">
+            <el-radio label="random_buy">随机 Buy 信号 <span v-if="latestBuyDate">({{ latestBuyDate }})</span></el-radio>
+            <el-radio label="manual">手动选择股票</el-radio>
+          </el-radio-group>
+          <el-button link type="primary" @click="fetchBuyOptions" :loading="loadingBuy" style="margin-left: 12px">
+            刷新 Buy 列表
+          </el-button>
+        </el-form-item>
+        <el-form-item label="数量">
+          <el-input-number v-model="manualForm.count" :min="1" :disabled="manualForm.mode === 'manual'" />
+          <span class="helper-text">不超过该用户当前 VIP 上限</span>
+        </el-form-item>
+        <el-form-item v-if="manualForm.mode === 'manual'" label="选择股票">
+          <el-select
+            v-model="manualForm.stock_ids"
+            multiple
+            filterable
+            :loading="loadingBuy"
+            style="width: 100%"
+            placeholder="选择最新交易日的 Buy 信号"
+          >
+            <el-option
+              v-for="item in buyOptions"
+              :key="item.value"
+              :label="`${item.code} ${item.name}`"
+              :value="item.value"
+            />
+          </el-select>
+          <div class="helper-text">来源：最新交易日 Buy 信号 {{ latestBuyDate || '' }}</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="manualDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="manualLoading" @click="submitManual">
+          确认分配
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import dayjs from 'dayjs'
 import api from '@/api'
@@ -188,12 +252,26 @@ const allocateDialogVisible = ref(false)
 const resultDialogVisible = ref(false)
 const userOptions = ref([])
 const allocateResult = ref([])
+const manualDialogVisible = ref(false)
+const manualLoading = ref(false)
+const manualForm = reactive({
+  user_id: null,
+  batch_date: dayjs().format('YYYY-MM-DD'),
+  mode: 'random_buy',
+  count: 5,
+  stock_ids: [],
+})
+const loadingBuy = ref(false)
+const buyOptions = ref([])
+const latestBuyDate = ref('')
 
 const allocateForm = reactive({
   batch_date: dayjs().format('YYYY-MM-DD'),
   target: 'all',
   user_ids: [],
 })
+
+const vip0Users = computed(() => userOptions.value.filter(u => u.vip_level === 0))
 
 async function fetchAllocations() {
   loading.value = true
@@ -245,11 +323,64 @@ async function fetchUsers() {
   }
 }
 
+async function fetchBuyOptions() {
+  loadingBuy.value = true
+  try {
+    // 先拿最新交易日
+    const latestRes = await api.get('/signals', { params: { limit: 1 } })
+    const latestItem = latestRes.data.items?.[0]
+    const tradeDate = latestItem?.trade_date
+    if (!tradeDate) {
+      latestBuyDate.value = ''
+      buyOptions.value = []
+      ElMessage.warning('暂无信号数据，请先计算信号')
+      return
+    }
+    latestBuyDate.value = tradeDate
+
+    const signalLimit = 500 // 后端限制 le=500
+    const stockLimit = 200  // 后端限制 le=200
+
+    const [signalsRes, stocksRes] = await Promise.all([
+      api.get('/signals', { params: { trade_date: tradeDate, limit: signalLimit } }),
+      api.get('/stocks', { params: { is_active: true, limit: stockLimit } }),
+    ])
+    const stockMap = new Map(stocksRes.data.items.map(s => [s.code, s]))
+    buyOptions.value = (signalsRes.data.items || [])
+      .filter(s => s.signal === 'Buy')
+      .map(sig => {
+        const stock = stockMap.get(sig.code)
+        if (!stock) return null
+        return {
+          value: stock.id,
+          code: sig.code,
+          name: stock.name || sig.name || '',
+        }
+      })
+      .filter(Boolean)
+  } catch (e) {
+    console.error(e)
+    ElMessage.error('获取 Buy 信号列表失败')
+  } finally {
+    loadingBuy.value = false
+  }
+}
+
 function showAllocateDialog() {
   allocateForm.batch_date = dayjs().format('YYYY-MM-DD')
   allocateForm.target = 'all'
   allocateForm.user_ids = []
   allocateDialogVisible.value = true
+}
+
+function showManualDialog() {
+  manualForm.batch_date = dayjs().format('YYYY-MM-DD')
+  manualForm.mode = 'random_buy'
+  manualForm.count = 5
+  manualForm.stock_ids = []
+  manualForm.user_id = vip0Users.value[0]?.id || null
+  manualDialogVisible.value = true
+  fetchBuyOptions()
 }
 
 async function executeAllocate() {
@@ -275,6 +406,39 @@ async function executeAllocate() {
     console.error(e)
   } finally {
     allocating.value = false
+  }
+}
+
+async function submitManual() {
+  if (!manualForm.user_id) {
+    ElMessage.warning('请选择用户')
+    return
+  }
+  if (!latestBuyDate.value) {
+    ElMessage.warning('暂无信号，请先计算信号后再分配')
+    return
+  }
+  if (manualForm.mode === 'manual' && manualForm.stock_ids.length === 0) {
+    ElMessage.warning('请选择股票')
+    return
+  }
+  manualLoading.value = true
+  try {
+    const payload = {
+      user_id: manualForm.user_id,
+      batch_date: manualForm.batch_date,
+      mode: manualForm.mode,
+      count: manualForm.mode === 'manual' ? manualForm.stock_ids.length || 1 : manualForm.count,
+      stock_ids: manualForm.mode === 'manual' ? manualForm.stock_ids : undefined,
+    }
+    const res = await api.post('/allocations/manual-allocate', payload)
+    ElMessage.success(res.data.message || '分配成功')
+    manualDialogVisible.value = false
+    fetchAllocations()
+  } catch (e) {
+    console.error(e)
+  } finally {
+    manualLoading.value = false
   }
 }
 
@@ -327,6 +491,11 @@ onMounted(() => {
     display: flex;
     justify-content: flex-end;
   }
+
+  .helper-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: 8px;
+  }
 }
 </style>
-
