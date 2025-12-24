@@ -138,15 +138,33 @@ class TushareDataSource(DataSourceBase):
             # 转换代码格式：600000.SH -> 600000.SH (tushare pro 使用相同格式)
             ts_code = self._normalize_code(code)
             
+            start_str = start_date.strftime('%Y%m%d')
+            end_str = end_date.strftime('%Y%m%d')
+
             loop = asyncio.get_event_loop()
-            df = await loop.run_in_executor(
-                None,
-                lambda: self._pro.daily(
-                    ts_code=ts_code,
-                    start_date=start_date.strftime('%Y%m%d'),
-                    end_date=end_date.strftime('%Y%m%d'),
-                )
-            )
+
+            def _fetch_daily_with_adj():
+                daily = self._pro.daily(ts_code=ts_code, start_date=start_str, end_date=end_str)
+                try:
+                    adj = self._pro.adj_factor(ts_code=ts_code, start_date=start_str, end_date=end_str)
+                except Exception:
+                    adj = None
+                if adj is not None and not adj.empty and daily is not None and not daily.empty:
+                    adj = adj[["trade_date", "adj_factor"]]
+                    daily = daily.merge(adj, on="trade_date", how="left")
+                    daily = daily.sort_values("trade_date")
+                    # Wind 在线 CHO 口径：前复权，使用最新因子做基准
+                    latest_factor = daily["adj_factor"].dropna().iloc[-1] if daily["adj_factor"].notna().any() else None
+                    if latest_factor and latest_factor != 0:
+                        ratio = daily["adj_factor"] / latest_factor
+                        for col in ["open", "high", "low", "close", "pre_close"]:
+                            if col in daily.columns:
+                                daily[col] = daily[col] * ratio
+                        if "amount" in daily.columns:
+                            daily["amount"] = daily["amount"] * ratio
+                return daily
+
+            df = await loop.run_in_executor(None, _fetch_daily_with_adj)
             
             if df is None or df.empty:
                 return []
@@ -163,8 +181,6 @@ class TushareDataSource(DataSourceBase):
                     amount=row.get('amount'),
                 ))
             
-            # 按日期正序排列
-            result.reverse()
             return result
             
         except Exception as e:

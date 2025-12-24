@@ -36,26 +36,16 @@ def _prepare_match_and_volume(
 ) -> Tuple[pd.Series, pd.Series]:
     close = df["close"].astype(float)
     volume = df["volume"].astype(float)
-    amount = df["amount"] if "amount" in df.columns else None
 
     volume_multiplier = 1.0
-    amount_multiplier = 1.0
     if source_name == "tushare":
         volume_multiplier = 100.0  # Tushare: vol=手
-        amount_multiplier = 1000.0  # Tushare: amount=千元
     elif source_name == "akshare":
         volume_multiplier = 100.0  # AKShare: 成交量通常为手
-        amount_multiplier = 1.0  # AKShare: 成交额通常为元
 
     volume_shares = volume * volume_multiplier
-    if amount is None:
-        return close, volume_shares
-
-    amount_yuan = amount.astype(float) * amount_multiplier
-    valid = (volume_shares > 0) & (amount_yuan > 0)
-    match_price = amount_yuan.where(valid) / volume_shares.where(valid)
-    match_price = match_price.replace([float("inf"), -float("inf")], pd.NA)
-    match_price = match_price.where(match_price.notna(), close)
+    # Wind CHO 口径使用价差公式，直接用前复权收盘价作为 MATCH
+    match_price = close
     return match_price, volume_shares
 
 
@@ -135,6 +125,7 @@ async def run_signals(
     stocks = db.query(Stock).filter(Stock.is_active == True).all()
     if not stocks:
         raise HTTPException(status_code=400, detail="无可用股票池")
+    active_codes = {s.code for s in stocks}
 
     # 确保数据源已初始化（不会重复初始化）
     await datasource_manager.initialize()
@@ -275,6 +266,9 @@ async def run_signals(
         # 分批间暂停，降低限频风险
         elif start_idx + batch_size < len(stocks):
             await asyncio.sleep(pause_seconds)
+
+    # 清理已删除股票的历史信号，保持与股票池同步
+    db.query(Signal).filter(Signal.trade_date == trade_date, ~Signal.code.in_(active_codes)).delete(synchronize_session=False)
 
     db.commit()
     logger.info(f"信号计算完成：实际 API 调用次数 = {api_call_count}，成功 = {created + updated}，失败 = {len(failed)}")
