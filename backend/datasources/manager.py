@@ -2,7 +2,7 @@
 数据源管理器
 支持多数据源优先级切换和自动降级
 """
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Union
 from datetime import date, datetime
 import logging
 
@@ -107,11 +107,12 @@ class DataSourceManager:
         raise RuntimeError(f"所有数据源均获取失败: {last_error}")
     
     async def get_daily_data(
-        self, 
-        code: str, 
-        start_date: date, 
-        end_date: date
-    ) -> List[Dict[str, Any]]:
+        self,
+        code: str,
+        start_date: date,
+        end_date: date,
+        with_source: bool = False,
+    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], str]]:
         """获取日线数据（自动降级）"""
         if not self._initialized:
             await self.initialize()
@@ -124,7 +125,10 @@ class DataSourceManager:
             try:
                 logger.debug(f"尝试从 {source.name} 获取 {code} 日线数据")
                 data = await source.get_daily_data(code, start_date, end_date)
-                return [d.model_dump() for d in data]
+                payload = [d.model_dump() for d in data]
+                if with_source:
+                    return payload, source.name
+                return payload
             except Exception as e:
                 logger.warning(f"数据源 {source.name} 获取日线数据失败: {e}")
                 last_error = e
@@ -155,4 +159,3 @@ class DataSourceManager:
 
 # 全局单例
 datasource_manager = DataSourceManager()
-

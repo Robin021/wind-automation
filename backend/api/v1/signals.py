@@ -4,11 +4,12 @@
 from datetime import date, datetime, timedelta
 import asyncio
 import logging
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from backend.api.v1.auth import get_current_admin, get_current_user
 from backend.datasources.manager import datasource_manager
@@ -23,6 +24,67 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(value: object) -> Optional[float]:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
+
+
+def _prepare_match_and_volume(
+    df: pd.DataFrame,
+    source_name: str,
+) -> Tuple[pd.Series, pd.Series]:
+    close = df["close"].astype(float)
+    volume = df["volume"].astype(float)
+    amount = df["amount"] if "amount" in df.columns else None
+
+    volume_multiplier = 1.0
+    amount_multiplier = 1.0
+    if source_name == "tushare":
+        volume_multiplier = 100.0  # Tushare: vol=手
+        amount_multiplier = 1000.0  # Tushare: amount=千元
+    elif source_name == "akshare":
+        volume_multiplier = 100.0  # AKShare: 成交量通常为手
+        amount_multiplier = 1.0  # AKShare: 成交额通常为元
+
+    volume_shares = volume * volume_multiplier
+    if amount is None:
+        return close, volume_shares
+
+    amount_yuan = amount.astype(float) * amount_multiplier
+    valid = (volume_shares > 0) & (amount_yuan > 0)
+    match_price = amount_yuan.where(valid) / volume_shares.where(valid)
+    match_price = match_price.replace([float("inf"), -float("inf")], pd.NA)
+    match_price = match_price.where(match_price.notna(), close)
+    return match_price, volume_shares
+
+
+def _compute_cho_metrics(
+    df: pd.DataFrame,
+    source_name: str,
+    short: int,
+    long: int,
+    smooth: int,
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """计算 CHO/MACHO 指标（与离线公式保持一致）."""
+    match_price, volume_shares = _prepare_match_and_volume(df, source_name)
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+
+    denom = (high + low).replace(0, pd.NA)
+    multiplier = (2 * match_price - high - low) / denom
+    multiplier = multiplier.replace([float("inf"), -float("inf")], pd.NA)
+    multiplier = multiplier.fillna(0.0)
+    money_flow = multiplier * volume_shares
+    mid = money_flow.cumsum()
+
+    cho_short = mid.rolling(window=short, min_periods=1).mean()
+    cho_long = mid.rolling(window=long, min_periods=1).mean()
+    cho = cho_short - cho_long
+    macho = cho.rolling(window=smooth, min_periods=1).mean()
+    return match_price, mid, cho_short, cho_long, cho, macho
+
+
 class SignalSchema(BaseModel):
     id: int
     trade_date: date
@@ -30,6 +92,12 @@ class SignalSchema(BaseModel):
     name: Optional[str]
     signal: str
     price: Optional[float]
+    match_price: Optional[float]
+    mid: Optional[float]
+    cho_short: Optional[float]
+    cho_long: Optional[float]
+    cho: Optional[float]
+    macho: Optional[float]
     note: Optional[str]
     generated_at: datetime
 
@@ -53,8 +121,12 @@ async def run_signals(
 
     逻辑：
     - 行情使用前复权/不复权：按数据源返回（AKShare 已前复权，Tushare 默认不复权）
-    - 成交量单位：股；成交额：元
-    - CHO 参数：short=3, long=24, smooth=24（smooth 未参与信号，仅保留 cho 曲线）
+    - 成交量/成交额按数据源换算为股/元
+    - MATCH 优先使用成交额/成交量（换算为 VWAP），无数据时使用收盘价
+    - CHO 参数：short=3, long=24, smooth=24（smooth 仅用于 MACHO 计算）
+    - MID:=SUM(VOLUME*(2*MATCH-HIGH-LOW)/(HIGH+LOW),0)
+    - CHO:=MA(MID,SHORT)-MA(MID,LONG)
+    - MACHO:=MA(CHO,N)
     - 买入：CHO_t > CHO_{t-1}
     - 卖出：CHO_t < CHO_{t-1}
     - 否则：Hold
@@ -97,8 +169,8 @@ async def run_signals(
     lookback_days = 180
 
     # 分批拉取，避免触发 Tushare 每分钟限频（800次/分钟）
-    batch_size = 50
-    pause_seconds = 12
+    batch_size = 80
+    pause_seconds = 5
     rate_limit_wait = 70
     
     logger.info(f"开始信号计算，共 {len(stocks)} 只股票，理论上需要 {len(stocks)} 次 API 调用")
@@ -110,13 +182,14 @@ async def run_signals(
             try:
                 # 每只股票之间添加小延迟（除了第一只），进一步降低请求频率
                 if idx > 0:
-                    await asyncio.sleep(0.1)  # 100ms 延迟
+                    await asyncio.sleep(0.05)  # 50ms 延迟，兼顾限频与速度
                 
                 start_date = trade_date - timedelta(days=lookback_days)
-                data = await datasource_manager.get_daily_data(
+                data, source_name = await datasource_manager.get_daily_data(
                     code=s.code,
                     start_date=start_date,
                     end_date=trade_date,
+                    with_source=True,
                 )
                 api_call_count += 1  # 记录 API 调用次数
                 if not data or len(data) < 2:
@@ -126,23 +199,21 @@ async def run_signals(
                 # 确保日期排序
                 df = df.sort_values("date")
 
-                # 计算 MID，避免除零
-                denom = (df["high"] + df["low"])
-                denom = denom.replace(0, pd.NA)
-                df["mid"] = df["volume"] * (2 * df["close"] - df["high"] - df["low"]) / denom
-
                 short, long, smooth = 3, 24, 24
-                df["cho_short"] = df["mid"].rolling(short, min_periods=1).mean()
-                df["cho_long"] = df["mid"].rolling(long, min_periods=1).mean()
-                df["cho"] = df["cho_short"] - df["cho_long"]
-                # MACHO 可留备用
-                df["macho"] = df["cho"].rolling(smooth, min_periods=1).mean()
+                (
+                    match_price,
+                    mid,
+                    cho_short,
+                    cho_long,
+                    cho,
+                    macho,
+                ) = _compute_cho_metrics(df, source_name, short, long, smooth)
 
                 if len(df) < 2:
                     sig_value = "Hold"
                 else:
-                    cho_now = df["cho"].iloc[-1]
-                    cho_prev = df["cho"].iloc[-2]
+                    cho_now = cho.iloc[-1]
+                    cho_prev = cho.iloc[-2]
                     if pd.isna(cho_now) or pd.isna(cho_prev):
                         sig_value = "Hold"
                     elif cho_now > cho_prev:
@@ -152,26 +223,42 @@ async def run_signals(
                     else:
                         sig_value = "Hold"
 
-                price = df["close"].iloc[-1]
+                price = _safe_float(df["close"].iloc[-1])
+                match_latest = _safe_float(match_price.iloc[-1]) if len(match_price) else None
+                mid_latest = _safe_float(mid.iloc[-1]) if len(mid) else None
+                cho_short_latest = _safe_float(cho_short.iloc[-1]) if len(cho_short) else None
+                cho_long_latest = _safe_float(cho_long.iloc[-1]) if len(cho_long) else None
+                cho_latest = _safe_float(cho.iloc[-1]) if len(cho) else None
+                macho_latest = _safe_float(macho.iloc[-1]) if len(macho) else None
 
-                sig = db.query(Signal).filter(Signal.trade_date == trade_date, Signal.code == s.code).first()
-                if sig:
-                    sig.signal = sig_value
-                    sig.price = price
-                    sig.name = s.name
-                    sig.generated_at = now
+                payload = {
+                    "trade_date": trade_date,
+                    "code": s.code,
+                    "name": s.name,
+                    "signal": sig_value,
+                    "price": price,
+                    "match_price": match_latest,
+                    "mid": mid_latest,
+                    "cho_short": cho_short_latest,
+                    "cho_long": cho_long_latest,
+                    "cho": cho_latest,
+                    "macho": macho_latest,
+                    "note": None,
+                    "generated_at": now,
+                }
+
+                existing = db.query(Signal.id).filter(Signal.trade_date == trade_date, Signal.code == s.code).first()
+                stmt = sqlite_insert(Signal).values(**payload)
+                update_cols = {k: stmt.excluded[k] for k in payload.keys() if k not in ("trade_date", "code")}
+                db.execute(
+                    stmt.on_conflict_do_update(
+                        index_elements=["trade_date", "code"],
+                        set_=update_cols,
+                    )
+                )
+                if existing:
                     updated += 1
                 else:
-                    sig = Signal(
-                        trade_date=trade_date,
-                        code=s.code,
-                        name=s.name,
-                        signal=sig_value,
-                        price=price,
-                        note=None,
-                        generated_at=now,
-                    )
-                    db.add(sig)
                     created += 1
             except Exception as e:
                 error_msg = str(e)
@@ -220,4 +307,3 @@ async def list_signals(
     total = query.count()
     items = query.order_by(Signal.trade_date.desc(), Signal.code).offset(skip).limit(limit).all()
     return {"total": total, "items": items}
-

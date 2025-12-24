@@ -21,9 +21,14 @@ class Signal(Base):
     name = Column(String(50))
     signal = Column(String(20), nullable=False)  # Buy / Sell / Hold
     price = Column(Float)
+    match_price = Column(Float)
+    mid = Column(Float)
+    cho_short = Column(Float)
+    cho_long = Column(Float)
+    cho = Column(Float)
+    macho = Column(Float)
     note = Column(String(200))
     generated_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     def __repr__(self):
         return f"<Signal {self.trade_date} {self.code} {self.signal}>"
-

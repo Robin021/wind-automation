@@ -10,6 +10,11 @@
           placeholder="交易日"
           style="width: 160px"
         />
+        <el-switch
+          v-model="showIndicators"
+          active-text="详细"
+          inactive-text="精简"
+        />
         <el-button type="primary" :loading="running" @click="runSignals">
           计算信号
         </el-button>
@@ -35,7 +40,69 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="price" label="参考价" width="100" />
+        <el-table-column
+          prop="price"
+          label="参考价"
+          width="100"
+          align="right"
+          header-align="right"
+          :formatter="formatNumber"
+        />
+        <el-table-column
+          v-if="showIndicators"
+          prop="match_price"
+          label="MATCH"
+          width="110"
+          align="right"
+          header-align="right"
+          :formatter="formatNumber"
+        />
+        <el-table-column
+          v-if="showIndicators"
+          prop="mid"
+          label="MID"
+          width="160"
+          align="right"
+          header-align="right"
+          :formatter="formatNumber"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          v-if="showIndicators"
+          prop="cho_short"
+          label="CHO_S"
+          width="110"
+          align="right"
+          header-align="right"
+          :formatter="formatNumber"
+        />
+        <el-table-column
+          v-if="showIndicators"
+          prop="cho_long"
+          label="CHO_L"
+          width="110"
+          align="right"
+          header-align="right"
+          :formatter="formatNumber"
+        />
+        <el-table-column
+          v-if="showIndicators"
+          prop="cho"
+          label="CHO"
+          width="110"
+          align="right"
+          header-align="right"
+          :formatter="formatNumber"
+        />
+        <el-table-column
+          v-if="showIndicators"
+          prop="macho"
+          label="MACHO"
+          width="110"
+          align="right"
+          header-align="right"
+          :formatter="formatNumber"
+        />
         <el-table-column prop="generated_at" label="生成时间" width="180" />
         <el-table-column prop="note" label="备注" />
       </el-table>
@@ -65,6 +132,14 @@ const signals = ref([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 50
+const showIndicators = ref(true)
+
+const formatNumber = (_row, _column, value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (Number.isNaN(num)) return '-'
+  return num.toFixed(4)
+}
 
 async function fetchSignals() {
   loading.value = true
@@ -133,4 +208,3 @@ onMounted(fetchSignals)
   }
 }
 </style>
-
