@@ -5,6 +5,7 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 import pandas as pd
 from io import BytesIO
@@ -121,27 +122,60 @@ async def import_stocks(
     if not all(col in df.columns for col in required_cols):
         raise HTTPException(status_code=400, detail=f"Excel 必须包含列: {required_cols}")
     
+    # 预取数据库已有的代码以便一次性去重，同时跟踪文件内重复
+    existing_codes = {code for (code,) in db.query(Stock.code).all()}
+    seen_in_file = set()
+    
     imported = 0
     skipped = 0
+    invalid = 0
     
     for _, row in df.iterrows():
-        code = str(row['code']).strip()
-        if db.query(Stock).filter(Stock.code == code).first():
+        raw_code = row.get('code')
+        raw_name = row.get('name')
+        
+        if pd.isna(raw_code) or pd.isna(raw_name):
+            invalid += 1
+            continue
+        
+        code = str(raw_code).strip()
+        name = str(raw_name).strip()
+        
+        if not code or not name:
+            invalid += 1
+            continue
+        
+        if code in existing_codes or code in seen_in_file:
             skipped += 1
             continue
         
+        seen_in_file.add(code)
+        
+        market_val = row.get('market')
+        industry_val = row.get('industry')
+        
         stock = Stock(
             code=code,
-            name=str(row['name']).strip(),
-            market=row.get('market', '').strip() if pd.notna(row.get('market')) else None,
-            industry=row.get('industry', '').strip() if pd.notna(row.get('industry')) else None,
+            name=name,
+            market=str(market_val).strip() if pd.notna(market_val) else None,
+            industry=str(industry_val).strip() if pd.notna(industry_val) else None,
         )
         db.add(stock)
         imported += 1
     
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # 仍然捕获到唯一约束错误时给出更友好的提示
+        raise HTTPException(status_code=400, detail="导入失败：存在重复的股票代码，请检查文件数据")
     
-    return {"message": f"导入完成：新增 {imported}，跳过 {skipped}（已存在）"}
+    return {
+        "message": f"导入完成：新增 {imported}，跳过 {skipped}（已存在/重复），无效 {invalid}",
+        "imported": imported,
+        "skipped": skipped,
+        "invalid": invalid,
+    }
 
 
 @router.put("/{stock_id}", response_model=StockResponse)
