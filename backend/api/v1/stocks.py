@@ -50,6 +50,10 @@ class StockList(BaseModel):
     items: List[StockResponse]
 
 
+class StockBatchDelete(BaseModel):
+    ids: List[int]
+
+
 # ============ Routes ============
 
 @router.get("", response_model=StockList)
@@ -176,6 +180,23 @@ async def delete_stock(
     return {"message": "股票已删除"}
 
 
+@router.post("/batch-delete")
+async def batch_delete_stocks(
+    payload: StockBatchDelete,
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Session = Depends(get_db),
+):
+    """批量删除股票（管理员）"""
+    ids = list({i for i in payload.ids if i is not None})
+    if not ids:
+        raise HTTPException(status_code=400, detail="请提供要删除的股票 ID 列表")
+    
+    deleted = db.query(Stock).filter(Stock.id.in_(ids)).delete(synchronize_session=False)
+    db.commit()
+    
+    return {"message": f"批量删除完成：删除 {deleted} 条", "deleted": deleted}
+
+
 @router.post("/{stock_id}/toggle-active")
 async def toggle_stock_active(
     stock_id: int,
@@ -191,4 +212,3 @@ async def toggle_stock_active(
     db.commit()
     
     return {"message": f"股票已{'启用' if stock.is_active else '禁用'}", "is_active": stock.is_active}
-

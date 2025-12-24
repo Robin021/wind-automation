@@ -21,11 +21,21 @@
         <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon> 添加
         </el-button>
+        <el-button type="danger" :disabled="!selectedRows.length" @click="deleteSelected">
+          批量删除
+        </el-button>
       </div>
     </div>
     
     <el-card>
-      <el-table :data="stocks" v-loading="loading" style="width: 100%">
+      <el-table
+        ref="tableRef"
+        :data="stocks"
+        v-loading="loading"
+        style="width: 100%"
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" width="50" />
         <el-table-column prop="code" label="代码" width="120">
           <template #default="{ row }">
             <span class="stock-code">{{ row.code }}</span>
@@ -143,6 +153,8 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 50
 const keyword = ref('')
+const selectedRows = ref([])
+const tableRef = ref()
 
 const editDialogVisible = ref(false)
 const importDialogVisible = ref(false)
@@ -254,6 +266,27 @@ async function deleteStock(stock) {
   }
 }
 
+function handleSelectionChange(selection) {
+  selectedRows.value = selection
+}
+
+async function deleteSelected() {
+  const ids = selectedRows.value.map(item => item.id)
+  if (!ids.length) return
+  
+  try {
+    await ElMessageBox.confirm(`确认删除选中的 ${ids.length} 条股票？`, '批量删除', { type: 'warning' })
+    await api.post('/stocks/batch-delete', { ids })
+    ElMessage.success('批量删除成功')
+    tableRef.value?.clearSelection()
+    fetchStocks()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error(e)
+    }
+  }
+}
+
 function showImportDialog() {
   uploadFile.value = null
   uploadRef.value?.clearFiles()
@@ -305,4 +338,3 @@ onMounted(fetchStocks)
   }
 }
 </style>
-
