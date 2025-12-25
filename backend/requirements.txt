@@ -14,6 +14,7 @@ passlib[bcrypt]>=1.7.4
 # Configuration
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
+email-validator>=2.1.0
 
 # Data Sources
 tushare>=1.2.89
@@ -27,4 +28,3 @@ numpy>=1.26.0
 # Utils
 httpx>=0.25.0
 python-dotenv>=1.0.0
-
