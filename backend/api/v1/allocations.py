@@ -1,14 +1,14 @@
 """
 股票分配 API
 """
-from typing import Annotated, List, Optional, Literal
-from datetime import date, datetime, timedelta
+from typing import Annotated, List, Optional
+from datetime import date
 import random
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from backend.core.database import get_db
 from backend.core.config import settings
@@ -18,8 +18,6 @@ from backend.models.allocation import Allocation
 from backend.models.signal import Signal
 from backend.models.vip_config import VipConfig
 from backend.api.v1.auth import get_current_admin, get_current_user
-from backend.services.subscription_service import get_effective_vip_level
-from backend.models.system_config import SystemConfig
 
 router = APIRouter()
 
@@ -57,47 +55,31 @@ class AllocationResult(BaseModel):
     stocks: List[dict]
 
 
-class ManualAllocatePayload(BaseModel):
-    """手工分配/随机抽取指定数量（适用于 VIP0 定制）"""
-    user_id: int
-    batch_date: date = Field(default_factory=date.today)
-    mode: Literal["random_buy", "manual"] = "random_buy"
-    count: int = Field(5, ge=1)
-    stock_ids: Optional[List[int]] = None
-
-
 # ============ Helper Functions ============
 
-def _get_free_trial_days(db: Session) -> int:
-    cfg = db.query(SystemConfig).filter(SystemConfig.key == "FREE_TRIAL_DAYS").first()
-    if not cfg:
-        return getattr(settings, "FREE_TRIAL_DAYS", 0)
-    try:
-        return max(0, int(cfg.value))
-    except (TypeError, ValueError):
-        return 0
-
-
-def get_vip_stock_limit(db: Session, vip_level: int, user: Optional[User] = None) -> int:
-    """
-    获取 VIP 等级对应的股票数量限制
-    - 若配置了 FREE_TRIAL_DAYS，则对 VIP0 的免费试用期过期后限制为 0
-    """
+def get_vip_stock_limit(db: Session, vip_level: int) -> int:
+    """获取 VIP 等级对应的股票数量限制"""
     config = db.query(VipConfig).filter(VipConfig.level == vip_level).first()
-    limit = config.stock_limit if config else settings.DEFAULT_VIP_LEVELS.get(vip_level, {}).get("stock_limit", 5)
-
-    if (
-        vip_level == 0
-        and user is not None
-        and user.created_at
-    ):
-        trial_days = _get_free_trial_days(db)
-        if trial_days > 0:
-            expire_at = user.created_at + timedelta(days=trial_days)
-            if datetime.utcnow() >= expire_at:
-                return 0
+    if config:
+        return config.stock_limit
     # 使用默认配置
-    return limit
+    default = settings.DEFAULT_VIP_LEVELS.get(vip_level, {})
+    return default.get("stock_limit", 5)
+
+
+def _cleanup_invalid_allocations(db: Session, user_id: Optional[int] = None) -> int:
+    """删除指向已删除/停用股票的分配记录，避免占位."""
+    query = (
+        db.query(Allocation)
+        .outerjoin(Stock, Allocation.stock_id == Stock.id)
+        .filter(or_(Stock.id == None, Stock.is_active == False))
+    )
+    if user_id:
+        query = query.filter(Allocation.user_id == user_id)
+    removed = query.delete(synchronize_session=False)
+    if removed:
+        db.commit()
+    return removed
 
 
 # ============ Routes ============
@@ -112,42 +94,17 @@ async def get_my_allocations(
     limit: int = Query(50, ge=1, le=500),
 ):
     """获取当前用户的股票分配"""
-    base_query = db.query(Allocation).filter(Allocation.user_id == current_user.id)
+    _cleanup_invalid_allocations(db, user_id=current_user.id)
 
-    # 默认只返回最新批次的“active”分配，避免累积历史批次导致数量叠加
-    if status:
-        base_query = base_query.filter(Allocation.status == status)
-
-    if batch_date:
-        query = base_query.filter(Allocation.batch_date == batch_date)
-    else:
-        latest_batch = (
-            base_query.with_entities(Allocation.batch_date)
-            .order_by(Allocation.batch_date.desc())
-            .first()
-        )
-        if latest_batch:
-            query = base_query.filter(Allocation.batch_date == latest_batch[0])
-        else:
-            query = base_query
+    query = db.query(Allocation).filter(Allocation.user_id == current_user.id)
     
-    # 按当前有效 VIP 限制返回的数量，避免历史异常/重复分配导致数量超额
-    effective_vip = get_effective_vip_level(db, current_user)
-    stock_limit_cap = get_vip_stock_limit(db, effective_vip, current_user)
-    max_allowed = None if stock_limit_cap == -1 else stock_limit_cap
-
-    total_all = query.count()
-    total = min(total_all, max_allowed) if max_allowed is not None else total_all
-
-    data_query = query.order_by(Allocation.id.desc())
-    if max_allowed is not None:
-        if skip >= max_allowed:
-            allocations = []
-        else:
-            page_limit = min(limit, max_allowed - skip)
-            allocations = data_query.offset(skip).limit(page_limit).all()
-    else:
-        allocations = data_query.offset(skip).limit(limit).all()
+    if batch_date:
+        query = query.filter(Allocation.batch_date == batch_date)
+    if status:
+        query = query.filter(Allocation.status == status)
+    
+    total = query.count()
+    allocations = query.offset(skip).limit(limit).all()
     
     # 附加股票信息
     items = []
@@ -182,6 +139,7 @@ async def list_allocations(
     limit: int = Query(50, ge=1, le=200),
 ):
     """获取分配列表（管理员）"""
+    _cleanup_invalid_allocations(db)
     query = db.query(Allocation)
     
     if user_id:
@@ -240,10 +198,8 @@ async def allocate_stocks(
     results = []
     
     for user in users:
-        # 订阅到期则视为 VIP0（不依赖 users.vip_level 的历史值）
-        effective_vip = get_effective_vip_level(db, user)
         # 获取该用户的股票限额
-        stock_limit = get_vip_stock_limit(db, effective_vip, user)
+        stock_limit = get_vip_stock_limit(db, user.vip_level)
         
         # 清除该用户当天的旧分配
         db.query(Allocation).filter(
@@ -266,7 +222,7 @@ async def allocate_stocks(
                 user_id=user.id,
                 stock_id=stock.id,
                 batch_date=batch_date,
-                vip_level_at_allocation=effective_vip,
+                vip_level_at_allocation=user.vip_level,
                 status="active",
             )
             db.add(allocation)
@@ -275,7 +231,7 @@ async def allocate_stocks(
         results.append(AllocationResult(
             user_id=user.id,
             username=user.username,
-            vip_level=effective_vip,
+            vip_level=user.vip_level,
             stock_limit=stock_limit,
             allocated_count=alloc_count,
             stocks=user_stocks,
@@ -287,79 +243,6 @@ async def allocate_stocks(
         "message": f"分配完成：{len(results)} 个用户",
         "batch_date": str(batch_date),
         "results": [r.model_dump() for r in results],
-    }
-
-
-@router.post("/manual-allocate")
-async def manual_allocate(
-    payload: ManualAllocatePayload,
-    _: Annotated[User, Depends(get_current_admin)],
-    db: Session = Depends(get_db),
-):
-    """
-    手工/定向分配（常用于 VIP0）：
-    - mode=random_buy：从最新交易日的 Buy 信号中随机抽取 count 只
-    - mode=manual：admin 提供 stock_ids 列表
-    """
-    user = db.query(User).filter(User.id == payload.user_id, User.is_active == True).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在或已禁用")
-
-    stock_limit = get_vip_stock_limit(db, get_effective_vip_level(db, user), user)
-    if stock_limit != -1 and payload.count > stock_limit:
-        raise HTTPException(status_code=400, detail=f"数量超出当前 VIP 限额（{stock_limit}）")
-
-    # 先清理该日期的旧分配
-    db.query(Allocation).filter(
-        Allocation.user_id == user.id,
-        Allocation.batch_date == payload.batch_date
-    ).delete()
-
-    if payload.mode == "manual":
-        if not payload.stock_ids:
-            raise HTTPException(status_code=400, detail="mode=manual 时需要提供 stock_ids")
-        selected_stocks = db.query(Stock).filter(Stock.id.in_(payload.stock_ids)).all()
-        if not selected_stocks:
-            raise HTTPException(status_code=400, detail="stock_ids 无效或为空")
-    else:
-        latest_trade_date = db.query(func.max(Signal.trade_date)).filter(Signal.signal == "Buy").scalar()
-        if not latest_trade_date:
-            raise HTTPException(status_code=400, detail="暂无 Buy 信号可用")
-        buy_q = (
-            db.query(Stock)
-            .join(Signal, Signal.code == Stock.code)
-            .filter(
-                Signal.trade_date == latest_trade_date,
-                Signal.signal == "Buy",
-                Stock.is_active == True,
-            )
-        )
-        buy_list = buy_q.all()
-        if not buy_list:
-            raise HTTPException(status_code=400, detail="最新交易日无符合条件的 Buy 信号")
-        take = min(payload.count, len(buy_list))
-        selected_stocks = random.sample(buy_list, take)
-
-    allocations = []
-    for stock in selected_stocks[: payload.count]:
-        alloc = Allocation(
-            user_id=user.id,
-            stock_id=stock.id,
-            batch_date=payload.batch_date,
-            vip_level_at_allocation=get_effective_vip_level(db, user),
-            status="active",
-        )
-        db.add(alloc)
-        allocations.append({"code": stock.code, "name": stock.name})
-
-    db.commit()
-
-    return {
-        "message": f"已为用户 {user.username} 分配 {len(allocations)} 只股票",
-        "batch_date": str(payload.batch_date),
-        "vip_level": get_effective_vip_level(db, user),
-        "stock_limit": stock_limit,
-        "stocks": allocations,
     }
 
 

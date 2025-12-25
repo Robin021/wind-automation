@@ -11,9 +11,7 @@ from backend.core.database import get_db
 from backend.core.config import settings
 from backend.models.user import User
 from backend.models.vip_config import VipConfig
-from backend.models.vip_price_config import VipPriceConfig
 from backend.api.v1.auth import get_current_admin
-from backend.models.system_config import SystemConfig
 
 router = APIRouter()
 
@@ -36,30 +34,6 @@ class VipConfigResponse(BaseModel):
     
     class Config:
         from_attributes = True
-
-
-# ============ VIP Price Schemas ============
-
-class VipPriceUpsert(BaseModel):
-    vip_level: int
-    price_fen: int
-    enabled: bool = True
-    duration_months: int = 3
-
-
-class VipPriceResponse(BaseModel):
-    id: int
-    vip_level: int
-    price_fen: int
-    enabled: bool
-    duration_months: int
-
-    class Config:
-        from_attributes = True
-
-
-class FreeTrialConfig(BaseModel):
-    free_trial_days: int
 
 
 # ============ Routes ============
@@ -147,94 +121,3 @@ async def init_vip_levels(
     db.commit()
     return {"message": "VIP 等级配置已初始化"}
 
-
-@router.get("/vip-prices", response_model=List[VipPriceResponse])
-async def get_vip_prices(db: Session = Depends(get_db)):
-    """获取 VIP 价格配置（用于前端展示/下单定价）"""
-    prices = db.query(VipPriceConfig).order_by(VipPriceConfig.vip_level).all()
-    return prices
-
-
-@router.post("/vip-prices", response_model=VipPriceResponse)
-async def upsert_vip_price(
-    payload: VipPriceUpsert,
-    _: Annotated[User, Depends(get_current_admin)],
-    db: Session = Depends(get_db),
-):
-    """创建或更新 VIP 价格配置（管理员）"""
-    if payload.vip_level < 0 or payload.vip_level > 4:
-        raise HTTPException(status_code=400, detail="vip_level 必须在 0-4 之间")
-    if payload.duration_months != 3:
-        raise HTTPException(status_code=400, detail="当前仅支持 3 个月订阅")
-    if payload.price_fen < 0:
-        raise HTTPException(status_code=400, detail="price_fen 不能为负数")
-
-    existing = db.query(VipPriceConfig).filter(VipPriceConfig.vip_level == payload.vip_level).first()
-    if existing:
-        existing.price_fen = payload.price_fen
-        existing.enabled = payload.enabled
-        existing.duration_months = payload.duration_months
-        db.commit()
-        db.refresh(existing)
-        return existing
-
-    rec = VipPriceConfig(
-        vip_level=payload.vip_level,
-        price_fen=payload.price_fen,
-        enabled=payload.enabled,
-        duration_months=payload.duration_months,
-    )
-    db.add(rec)
-    db.commit()
-    db.refresh(rec)
-    return rec
-
-
-@router.delete("/vip-prices/{vip_level}")
-async def delete_vip_price(
-    vip_level: int,
-    _: Annotated[User, Depends(get_current_admin)],
-    db: Session = Depends(get_db),
-):
-    """删除 VIP 价格配置（管理员）"""
-    rec = db.query(VipPriceConfig).filter(VipPriceConfig.vip_level == vip_level).first()
-    if not rec:
-        raise HTTPException(status_code=404, detail="VIP 价格配置不存在")
-    db.delete(rec)
-    db.commit()
-    return {"message": f"VIP{vip_level} 价格配置已删除"}
-
-
-@router.get("/free-trial", response_model=FreeTrialConfig)
-async def get_free_trial_config(
-    _: Annotated[User, Depends(get_current_admin)],
-    db: Session = Depends(get_db),
-):
-    cfg = db.query(SystemConfig).filter(SystemConfig.key == "FREE_TRIAL_DAYS").first()
-    if cfg is None:
-        return {"free_trial_days": getattr(settings, "FREE_TRIAL_DAYS", 0)}
-    try:
-        return {"free_trial_days": max(0, int(cfg.value))}
-    except (TypeError, ValueError):
-        return {"free_trial_days": 0}
-
-
-@router.post("/free-trial", response_model=FreeTrialConfig)
-async def set_free_trial_config(
-    payload: FreeTrialConfig,
-    _: Annotated[User, Depends(get_current_admin)],
-    db: Session = Depends(get_db),
-):
-    """设置免费用户试用期（天），0 表示关闭试用"""
-    if payload.free_trial_days < 0:
-        raise HTTPException(status_code=400, detail="free_trial_days 不能为负数")
-
-    cfg = db.query(SystemConfig).filter(SystemConfig.key == "FREE_TRIAL_DAYS").first()
-    if cfg:
-        cfg.value = str(payload.free_trial_days)
-    else:
-        cfg = SystemConfig(key="FREE_TRIAL_DAYS", value=str(payload.free_trial_days))
-        db.add(cfg)
-    db.commit()
-    db.refresh(cfg)
-    return {"free_trial_days": max(0, int(cfg.value))}

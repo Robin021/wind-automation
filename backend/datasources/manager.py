@@ -90,11 +90,18 @@ class DataSourceManager:
         """获取实时行情（自动降级）"""
         if not self._initialized:
             await self.initialize()
-        
+        if not any(src.is_available for src in self._sources):
+            await self.health_check()
+
         last_error = None
         for source in self._sources:
             if not source.is_available:
-                continue
+                try:
+                    await source.health_check()
+                except Exception:
+                    pass
+                if not source.is_available:
+                    continue
             
             try:
                 logger.debug(f"尝试从 {source.name} 获取 {code} 行情")
@@ -116,11 +123,18 @@ class DataSourceManager:
         """获取日线数据（自动降级）"""
         if not self._initialized:
             await self.initialize()
-        
+        if not any(src.is_available for src in self._sources):
+            await self.health_check()
+
         last_error = None
         for source in self._sources:
             if not source.is_available:
-                continue
+                try:
+                    await source.health_check()
+                except Exception:
+                    pass
+                if not source.is_available:
+                    continue
             
             try:
                 logger.debug(f"尝试从 {source.name} 获取 {code} 日线数据")
@@ -140,11 +154,18 @@ class DataSourceManager:
         """获取股票列表（自动降级）"""
         if not self._initialized:
             await self.initialize()
-        
+        if not any(src.is_available for src in self._sources):
+            await self.health_check()
+
         last_error = None
         for source in self._sources:
             if not source.is_available:
-                continue
+                try:
+                    await source.health_check()
+                except Exception:
+                    pass
+                if not source.is_available:
+                    continue
             
             try:
                 logger.debug(f"尝试从 {source.name} 获取股票列表")

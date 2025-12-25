@@ -131,7 +131,12 @@
           header-align="right"
           :formatter="formatNumber"
         />
-        <el-table-column prop="generated_at" label="生成时间" width="180" />
+        <el-table-column
+          prop="generated_at"
+          label="生成时间"
+          width="190"
+          :formatter="formatDateTime"
+        />
         <el-table-column prop="note" label="备注" />
       </el-table>
       <div class="pagination">
@@ -170,6 +175,17 @@ const formatNumber = (_row, _column, value) => {
   const num = Number(value)
   if (Number.isNaN(num)) return '-'
   return num.toFixed(4)
+}
+
+const formatDateTime = (_row, _column, value) => {
+  if (!value) return '-'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  // 按北京时间展示
+  return d.toLocaleString('zh-CN', {
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  })
 }
 
 async function fetchSignals() {

@@ -32,24 +32,9 @@ class Settings(BaseSettings):
     
     # 数据源
     TUSHARE_TOKEN: str = ""
-    # 可自定义 Tushare 域名；留空时使用官方默认（一般是 http://api.waditu.com/dataapi）
-    TUSHARE_BASE_URL: str = ""
+    # 可自定义 Tushare 代理域名
+    TUSHARE_BASE_URL: str = "http://api.tushare.pro"
     ENABLE_AKSHARE: bool = False
-
-    # ============ WeChat Pay (V3) ============
-    # 开发/联调阶段建议开启 mock，不依赖微信证书与真实下单
-    WECHAT_PAY_MOCK: bool = True
-    WECHAT_PAY_MCHID: str = ""
-    WECHAT_PAY_MERCHANT_SERIAL_NO: str = ""
-    WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH: str = ""
-    WECHAT_PAY_API_V3_KEY: str = ""
-    WECHAT_PAY_NOTIFY_URL: str = ""
-    WECHAT_PAY_APPID_MP: str = ""
-    WECHAT_PAY_APPID_MINI: str = ""
-    WECHAT_PAY_BASE_URL: str = "https://api.mch.weixin.qq.com"
-    # 平台证书或微信支付公钥 PEM 路径（用于回调验签）
-    WECHAT_PAY_PLATFORM_CERT_PATH: str = ""
-    WECHAT_PAY_PLATFORM_SERIAL_NO: str = ""
     
     # 日志
     LOG_LEVEL: str = "INFO"
@@ -63,8 +48,6 @@ class Settings(BaseSettings):
         4: {"name": "SVIP", "stock_limit": -1},  # -1 表示不限
     }
 
-    # 免费用户试用期（天），超期后 VIP0 限额降为 0（不再分配），0 表示不启用
-    FREE_TRIAL_DAYS: int = 0  # 若后台配置存在，则后台配置优先
-
 
 settings = Settings()
+

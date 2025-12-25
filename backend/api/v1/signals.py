@@ -1,21 +1,21 @@
 """
 信号计算与查询
 """
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time
 import asyncio
 import json
 import logging
 from typing import Annotated, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+import pandas as pd
 
 from backend.api.v1.auth import get_current_admin, get_current_user
 from backend.datasources.manager import datasource_manager
-
-import pandas as pd
 from backend.core.database import get_db
 from backend.models.signal import Signal
 from backend.models.stock import Stock
@@ -24,6 +24,7 @@ from backend.models.system_config import SystemConfig
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
 DEFAULT_SIGNAL_PARAMS = {"short": 3, "long": 24, "smooth": 24}
 
 
@@ -37,6 +38,7 @@ def _prepare_match_and_volume(
     df: pd.DataFrame,
     source_name: str,
 ) -> Tuple[pd.Series, pd.Series]:
+    """换算 MATCH（收盘价）与成交量（股）."""
     close = df["close"].astype(float)
     volume = df["volume"].astype(float)
 
@@ -47,8 +49,7 @@ def _prepare_match_and_volume(
         volume_multiplier = 100.0  # AKShare: 成交量通常为手
 
     volume_shares = volume * volume_multiplier
-    # Wind CHO 口径使用价差公式，直接用前复权收盘价作为 MATCH
-    match_price = close
+    match_price = close  # Wind CHO 口径使用价差公式，直接用前复权收盘价作为 MATCH
     return match_price, volume_shares
 
 
@@ -59,7 +60,7 @@ def _compute_cho_metrics(
     long: int,
     smooth: int,
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-    """计算 CHO/MACHO 指标（与离线公式保持一致）."""
+    """计算 CHO/MACHO 指标."""
     match_price, volume_shares = _prepare_match_and_volume(df, source_name)
     high = df["high"].astype(float)
     low = df["low"].astype(float)
@@ -126,7 +127,8 @@ def _load_signal_params(db: Session) -> SignalParams:
 def _save_signal_params(db: Session, params: SignalParams) -> SignalParams:
     payload = params.model_dump()
     rec = db.query(SystemConfig).filter(SystemConfig.key == "signal_params").first()
-    now = datetime.utcnow()
+    # 生成时间存储为北京时间，便于前端直接展示
+    now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
     if rec:
         rec.value = json.dumps(payload)
         rec.updated_at = now
@@ -166,6 +168,7 @@ async def run_signals(
     _: Annotated[User, Depends(get_current_admin)],
     db: Session = Depends(get_db),
     trade_date: date = Query(default_factory=date.today),
+    force: bool = Query(False, description="true 时绕过收盘时间检查"),
 ):
     """
     计算并写入信号
@@ -177,9 +180,7 @@ async def run_signals(
     - MID:=SUM(VOLUME*(2*MATCH-HIGH-LOW)/(HIGH+LOW),0)
     - CHO:=MA(MID,SHORT)-MA(MID,LONG)
     - MACHO:=MA(CHO,N)
-    - 买入：CHO_t > CHO_{t-1}
-    - 卖出：CHO_t < CHO_{t-1}
-    - 否则：Hold
+    - 买入：CHO_t > CHO_{t-1}；卖出：CHO_t < CHO_{t-1}；否则 Hold
     - price 使用当日收盘价
     """
     stocks = db.query(Stock).filter(Stock.is_active == True).all()
@@ -187,30 +188,16 @@ async def run_signals(
         raise HTTPException(status_code=400, detail="无可用股票池")
     active_codes = {s.code for s in stocks}
 
+    # 交易时段保护：交易日当天收盘前不计算（除非 force=true）
+    now_cn = datetime.now(ZoneInfo("Asia/Shanghai"))
+    if trade_date == now_cn.date() and now_cn.time() < time(15, 30) and not force:
+        raise HTTPException(status_code=400, detail="交易未收盘，暂不计算信号。若需强制计算，请携带 force=true。")
+
     # 确保数据源已初始化（不会重复初始化）
     await datasource_manager.initialize()
 
-    # 在开始计算前，先测试一下是否已经限频
-    # 如果已经限频，等待一段时间再开始
-    logger.info("检测限频状态...")
-    test_code = stocks[0].code if stocks else "000001.SZ"
-    try:
-        test_start = trade_date - timedelta(days=10)  # 只测试最近10天，减少消耗
-        await datasource_manager.get_daily_data(
-            code=test_code,
-            start_date=test_start,
-            end_date=trade_date,
-        )
-        logger.info("限频检测通过，开始计算")
-    except Exception as e:
-        error_msg = str(e)
-        if "每分钟最多访问" in error_msg or "800次" in error_msg:
-            logger.warning("检测到已触发限频，等待 70 秒后开始计算...")
-            await asyncio.sleep(70)
-        else:
-            logger.warning(f"限频检测失败（非限频错误）: {error_msg}")
-
-    now = datetime.utcnow()
+    # 生成时间存储为北京时间，便于前端展示一致
+    now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
     created = 0
     updated = 0
     failed = []
@@ -225,7 +212,7 @@ async def run_signals(
     pause_seconds = 5
     rate_limit_wait = 70
     
-    logger.info(f"开始信号计算，共 {len(stocks)} 只股票，理论上需要 {len(stocks)} 次 API 调用")
+    logger.info(f"开始信号计算，共 {len(stocks)} 只股票，理论上需要 {len(stocks)} 次 API 调用，参数 {params.model_dump()}")
 
     for start_idx in range(0, len(stocks), batch_size):
         batch = stocks[start_idx:start_idx + batch_size]
@@ -250,6 +237,9 @@ async def run_signals(
                 df = pd.DataFrame(data)
                 # 确保日期排序
                 df = df.sort_values("date")
+                last_date = pd.to_datetime(df["date"]).max().date()
+                if last_date < trade_date:
+                    raise ValueError(f"数据未更新，最新行情日期 {last_date}")
 
                 short, long, smooth = params.short, params.long, params.smooth
                 (
@@ -328,18 +318,24 @@ async def run_signals(
         elif start_idx + batch_size < len(stocks):
             await asyncio.sleep(pause_seconds)
 
-    # 清理已删除股票的历史信号，保持与股票池同步
+    # 清理已删除/停用股票的信号
     db.query(Signal).filter(Signal.trade_date == trade_date, ~Signal.code.in_(active_codes)).delete(synchronize_session=False)
 
     db.commit()
-    logger.info(f"信号计算完成：实际 API 调用次数 = {api_call_count}，成功 = {created + updated}，失败 = {len(failed)}")
+    if created + updated == 0:
+        # 如果所有股票都失败，返回 400 并带上首条失败信息方便排查
+        msg = "信号计算失败：无成功记录，可能行情未更新或数据源不可用。"
+        if failed:
+            msg += f" 首条失败: {failed[0]['code']} -> {failed[0]['error']}"
+        raise HTTPException(status_code=400, detail=msg)
+    logger.info(f"信号计算完成：调用 {api_call_count} 次，创建 {created}，更新 {updated}，失败 {len(failed)}")
     return {
         "message": "信号计算完成",
         "trade_date": str(trade_date),
         "created": created,
         "updated": updated,
         "failed": failed,
-        "api_call_count": api_call_count,  # 返回实际调用次数，方便排查
+        "api_call_count": api_call_count,
     }
 
 
