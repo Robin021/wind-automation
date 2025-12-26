@@ -17,21 +17,22 @@ logger = logging.getLogger(__name__)
 _wxpay_instance: Optional[WeChatPay] = None
 
 
-def _load_private_key() -> str:
-    """加载商户私钥"""
-    key_path = settings.WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH
-    if not key_path:
-        raise ValueError("WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH 未配置")
+def _load_file_content(file_path: str, name: str) -> str:
+    """加载文件内容"""
+    if not file_path:
+        raise ValueError(f"{name} 路径未配置")
     
     # 支持相对路径和绝对路径
-    path = Path(key_path)
+    path = Path(file_path)
     if not path.is_absolute():
-        path = Path("/app") / key_path  # Docker 容器内路径
-        if not path.exists():
-            path = Path(key_path)  # 本地开发路径
+        # 尝试 Docker 容器内路径
+        docker_path = Path("/app") / file_path
+        if docker_path.exists():
+            path = docker_path
+        # 否则使用原路径（本地开发）
     
     if not path.exists():
-        raise FileNotFoundError(f"商户私钥文件不存在: {key_path}")
+        raise FileNotFoundError(f"{name}文件不存在: {file_path}")
     
     return path.read_text()
 
@@ -49,18 +50,44 @@ def get_wxpay() -> WeChatPay:
     if not settings.WECHAT_PAY_API_V3_KEY:
         raise ValueError("WECHAT_PAY_API_V3_KEY 未配置")
     
-    private_key = _load_private_key()
-    
-    _wxpay_instance = WeChatPay(
-        wechatpay_type=WeChatPayType.NATIVE,
-        mchid=settings.WECHAT_PAY_MCHID,
-        private_key=private_key,
-        cert_serial_no=settings.WECHAT_PAY_MERCHANT_SERIAL_NO,
-        apiv3_key=settings.WECHAT_PAY_API_V3_KEY,
-        appid=settings.WECHAT_PAY_APPID_MP,  # 默认使用公众号 AppID
-        notify_url=settings.WECHAT_PAY_NOTIFY_URL,
-        logger=logger,
+    # 加载商户私钥
+    private_key = _load_file_content(
+        settings.WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH,
+        "商户私钥"
     )
+    
+    # 加载平台证书/公钥（可选，但验签回调时需要）
+    wechatpay_public_key = None
+    if settings.WECHAT_PAY_PLATFORM_CERT_PATH:
+        try:
+            wechatpay_public_key = _load_file_content(
+                settings.WECHAT_PAY_PLATFORM_CERT_PATH,
+                "微信平台证书"
+            )
+        except (FileNotFoundError, ValueError) as e:
+            logger.warning(f"加载微信平台证书失败: {e}，回调验签可能失败")
+    
+    init_params = {
+        "wechatpay_type": WeChatPayType.NATIVE,
+        "mchid": settings.WECHAT_PAY_MCHID,
+        "private_key": private_key,
+        "cert_serial_no": settings.WECHAT_PAY_MERCHANT_SERIAL_NO,
+        "apiv3_key": settings.WECHAT_PAY_API_V3_KEY,
+        "appid": settings.WECHAT_PAY_APPID_MP,
+        "notify_url": settings.WECHAT_PAY_NOTIFY_URL,
+        "logger": logger,
+    }
+    
+    # 如果有平台公钥，添加到初始化参数
+    if wechatpay_public_key:
+        # 新版 wechatpayv3 使用公钥 ID 模式
+        if settings.WECHAT_PAY_PLATFORM_SERIAL_NO:
+            init_params["wechatpay_public_key"] = wechatpay_public_key
+            init_params["public_key_id"] = settings.WECHAT_PAY_PLATFORM_SERIAL_NO
+        else:
+            init_params["wechatpay_public_key"] = wechatpay_public_key
+    
+    _wxpay_instance = WeChatPay(**init_params)
     
     return _wxpay_instance
 
