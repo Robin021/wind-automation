@@ -1,7 +1,7 @@
 """
 数据源 API
 """
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Dict, Any
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -85,4 +85,28 @@ async def get_daily_data(
         return {"code": code, "data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取数据失败: {str(e)}")
+
+
+@router.get("/indices", response_model=List[StockQuote])
+async def get_market_indices(
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """获取主要市场指数"""
+    try:
+        return await datasource_manager.get_market_indices()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取指数失败: {str(e)}")
+
+
+@router.get("/sectors", response_model=List[Dict[str, Any]])
+async def get_sector_rankings(
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """获取板块涨跌幅排行"""
+    try:
+        return await datasource_manager.get_sector_data()
+    except Exception as e:
+        # 避免前端报错，返回空列表
+        print(f"Error fetching sectors: {e}")  # Simple logging
+        return []
 

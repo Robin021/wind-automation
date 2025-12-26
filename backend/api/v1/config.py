@@ -10,7 +10,8 @@ from pydantic import BaseModel
 from backend.core.database import get_db
 from backend.core.config import settings
 from backend.models.user import User
-from backend.models.vip_config import VipConfig
+from backend.models.vip_config import VipConfig, VipPriceConfig
+from backend.models.system_config import SystemConfig
 from backend.api.v1.auth import get_current_admin
 
 router = APIRouter()
@@ -34,6 +35,22 @@ class VipConfigResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class VipPriceConfigBase(BaseModel):
+    vip_level: int
+    price_fen: int
+    duration_months: int = 3
+    enabled: bool = True
+
+class VipPriceConfigResponse(VipPriceConfigBase):
+    id: int
+    
+    class Config:
+        from_attributes = True
+
+class FreeTrialConfig(BaseModel):
+    free_trial_days: int
 
 
 # ============ Routes ============
@@ -120,4 +137,73 @@ async def init_vip_levels(
     
     db.commit()
     return {"message": "VIP 等级配置已初始化"}
+
+
+@router.get("/vip-prices", response_model=List[VipPriceConfigResponse])
+async def get_vip_prices(db: Session = Depends(get_db)):
+    """获取 VIP 价格配置"""
+    try:
+        prices = db.query(VipPriceConfig).order_by(VipPriceConfig.vip_level).all()
+        # Convert integer (0/1) to bool for response if needed, 
+        # but pydantic with from_attributes=True usually handles int->bool conversion if strict is false.
+        # Actually sqlalchemy SQLite might return int. Pydantic handles int to bool (1->True, 0->False).
+        return prices
+    except Exception as e:
+        print(f"Error fetching vip prices: {e}")
+        return []
+
+
+@router.post("/vip-prices", response_model=VipPriceConfigResponse)
+async def update_vip_price(
+    config_data: VipPriceConfigBase,
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Session = Depends(get_db),
+):
+    """更新 VIP 价格配置"""
+    existing = db.query(VipPriceConfig).filter(VipPriceConfig.vip_level == config_data.vip_level).first()
+    
+    if existing:
+        existing.price_fen = config_data.price_fen
+        existing.duration_months = config_data.duration_months
+        existing.enabled = 1 if config_data.enabled else 0
+        db.commit()
+        db.refresh(existing)
+        return existing
+    else:
+        new_config = VipPriceConfig(
+            vip_level=config_data.vip_level,
+            price_fen=config_data.price_fen,
+            duration_months=config_data.duration_months,
+            enabled=1 if config_data.enabled else 0
+        )
+        db.add(new_config)
+        db.commit()
+        db.refresh(new_config)
+        return new_config
+
+
+@router.get("/free-trial", response_model=FreeTrialConfig)
+async def get_free_trial(db: Session = Depends(get_db)):
+    """获取免费试用期天数"""
+    config = db.query(SystemConfig).filter(SystemConfig.key == "free_trial_days").first()
+    days = int(config.value) if config else 0
+    return FreeTrialConfig(free_trial_days=days)
+
+
+@router.post("/free-trial")
+async def update_free_trial(
+    config: FreeTrialConfig,
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Session = Depends(get_db),
+):
+    """更新免费试用期天数"""
+    existing = db.query(SystemConfig).filter(SystemConfig.key == "free_trial_days").first()
+    if existing:
+        existing.value = str(config.free_trial_days)
+    else:
+        existing = SystemConfig(key="free_trial_days", value=str(config.free_trial_days))
+        db.add(existing)
+    
+    db.commit()
+    return {"message": "配置已更新", "free_trial_days": config.free_trial_days}
 

@@ -229,6 +229,7 @@ async def run_signals(
                     start_date=start_date,
                     end_date=trade_date,
                     with_source=True,
+                    expected_latest_date=trade_date,  # 确保获取到当天数据
                 )
                 api_call_count += 1  # 记录 API 调用次数
                 if not data or len(data) < 2:

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     TUSHARE_TOKEN: str = ""
     # 可自定义 Tushare 代理域名
     TUSHARE_BASE_URL: str = "http://api.tushare.pro"
-    ENABLE_AKSHARE: bool = False
+    ENABLE_AKSHARE: bool = True
     
     # 日志
     LOG_LEVEL: str = "INFO"

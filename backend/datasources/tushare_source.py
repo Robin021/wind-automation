@@ -194,3 +194,63 @@ class TushareDataSource(DataSourceBase):
             
         except Exception as e:
             raise RuntimeError(f"获取股票列表失败: {e}")
+    async def get_market_indices(self) -> List[StockQuote]:
+        """获取市场指数行情"""
+        if not self._is_available:
+            raise RuntimeError("Tushare 数据源不可用")
+        
+        try:
+            import tushare as ts
+            # 常见指数: 上证指数, 深证成指, 创业板指, 科创50
+            # map: sh=000001, sz=399001, cyb=399006, kcb=000688 (approx)
+            # tushare legacy generic codes: ['sh', 'sz', 'cyb', 'zxb']
+            # zxb is gone.
+            # let's try specific codes if possible or use the short codes
+            codes = ['sh', 'sz', 'cyb', 'kc50'] 
+            
+            loop = asyncio.get_event_loop()
+            df = await loop.run_in_executor(
+                None,
+                lambda: ts.get_realtime_quotes(codes)
+            )
+            
+            if df is None or df.empty:
+                raise ValueError("无法获取指数数据")
+            
+            result = []
+            for _, row in df.iterrows():
+                # map legacy names/codes to standard
+                code = row['code'] # e.g. '000001'
+                name = row['name']
+                
+                # Assign simplified codes for frontend
+                if name == '上证指数':
+                    code = '000001.SH'
+                elif name == '深证成指':
+                    code = '399001.SZ'
+                elif name == '创业板指':
+                    code = '399006.SZ'
+                elif name == '科创50':
+                    code = '000688.SH'
+                
+                result.append(StockQuote(
+                    code=code,
+                    name=name,
+                    open=float(row['open']),
+                    high=float(row['high']),
+                    low=float(row['low']),
+                    close=float(row['price']),
+                    pre_close=float(row['pre_close']),
+                    volume=float(row['volume']),
+                    amount=float(row['amount']),
+                    date=row['date'],
+                ))
+            return result
+            
+        except Exception as e:
+            raise RuntimeError(f"获取指数失败: {e}")
+
+    async def get_sector_data(self) -> List[Dict[str, Any]]:
+        """获取板块数据"""
+        # Tushare pro 实时板块数据较难获取，交给 AKShare
+        raise NotImplementedError("Tushare 不支持实时板块数据")

@@ -99,6 +99,16 @@ class DataSourceBase(ABC):
             List[Dict]: 股票列表，每个元素包含 code, name, market 等字段
         """
         pass
+
+    @abstractmethod
+    async def get_market_indices(self) -> List[StockQuote]:
+        """获取市场指数行情"""
+        pass
+
+    @abstractmethod
+    async def get_sector_data(self) -> List[Dict[str, Any]]:
+        """获取板块数据"""
+        pass
     
     def _normalize_code(self, code: str) -> str:
         """标准化股票代码格式
