@@ -1,7 +1,7 @@
 """API v1 路由汇总"""
 from fastapi import APIRouter
 
-from backend.api.v1 import auth, users, stocks, allocations, config, datasources, signals, subscriptions
+from backend.api.v1 import auth, users, stocks, allocations, config, datasources, signals, subscriptions, payments
 
 router = APIRouter()
 
@@ -13,4 +13,5 @@ router.include_router(config.router, prefix="/config", tags=["系统配置"])
 router.include_router(datasources.router, prefix="/datasources", tags=["数据源"])
 router.include_router(signals.router, prefix="/signals", tags=["信号"])
 router.include_router(subscriptions.router, prefix="/subscriptions", tags=["订阅"])
+router.include_router(payments.router, prefix="/payments", tags=["支付"])
 
