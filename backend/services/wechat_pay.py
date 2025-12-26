@@ -56,9 +56,10 @@ def get_wxpay() -> WeChatPay:
         "商户私钥"
     )
     
+    
     # 判断是否使用公钥模式（PUB_KEY_ID_ 开头）
     is_public_key_mode = (
-        settings.WECHAT_PAY_PLATFORM_SERIAL_NO and 
+        bool(settings.WECHAT_PAY_PLATFORM_SERIAL_NO) and 
         settings.WECHAT_PAY_PLATFORM_SERIAL_NO.startswith("PUB_KEY_ID_")
     )
     

@@ -6,10 +6,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 from backend.core.config import settings
 from backend.core.database import create_db_and_tables
 from backend.api.v1 import router as api_v1_router
+
+# 配置日志
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 
 @asynccontextmanager

@@ -344,7 +344,7 @@ async def wechat_notify_real(
         "Wechatpay-Signature-Type": request.headers.get("wechatpay-signature-type", "WECHATPAY2-SHA256-RSA2048"),
     }
     
-    logger.info(f"收到微信支付回调: headers={headers}, body_length={len(body_str)}")
+    logger.info(f"收到微信支付回调: headers={headers}, body_str={body_str}")
     
     # 使用 wechatpayv3 SDK 验签并解密
     try:
@@ -353,13 +353,13 @@ async def wechat_notify_real(
         result = wxpay.callback(headers=headers, body=body_str)
         
         if not result:
-            logger.error("微信支付回调验签失败: result is None")
+            logger.error(f"微信支付回调验签失败. Headers: {headers}, Body: {body_str}")
             return {"code": "FAIL", "message": "验签失败"}
         
         data = result
         logger.info(f"微信支付回调解密成功: {data}")
     except Exception as e:
-        logger.exception(f"微信支付回调验签异常: {e}")
+        logger.exception(f"微信支付回调验签异常: {e}. Headers: {headers}")
         return {"code": "FAIL", "message": f"验签异常: {str(e)}"}
     
     
@@ -368,6 +368,7 @@ async def wechat_notify_real(
     trade_state = data.get("trade_state")
     
     if not out_trade_no:
+        logger.error("解密后缺少订单号")
         return {"code": "FAIL", "message": "缺少订单号"}
     
     order = db.query(PaymentOrder).filter(PaymentOrder.out_trade_no == out_trade_no).first()
@@ -380,6 +381,7 @@ async def wechat_notify_real(
     
     if order.status == "paid":
         # 已处理过，直接返回成功
+        logger.info(f"订单已支付，忽略回调: {out_trade_no}")
         return {"code": "SUCCESS", "message": "成功"}
     
     if trade_state == "SUCCESS":
@@ -400,6 +402,9 @@ async def wechat_notify_real(
         order.status = "failed"
         order.note = f"支付失败: {trade_state}"
         logger.info(f"订单支付失败: {out_trade_no}, state={trade_state}")
+    else:
+        # 其他状态可能是 USERPAYING 等
+        logger.info(f"订单状态更新: {out_trade_no}, state={trade_state}")
     
     db.commit()
     return {"code": "SUCCESS", "message": "成功"}
