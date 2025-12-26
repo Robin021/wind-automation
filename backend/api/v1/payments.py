@@ -136,6 +136,65 @@ async def get_my_orders(
     return OrderList(total=total, items=items)
 
 
+@router.post("/query-status/{out_trade_no}")
+async def query_order_status(
+    out_trade_no: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    主动查询订单支付状态（用于回调未收到时手动同步）
+    """
+    from backend.services.wechat_pay import query_order
+    
+    order = db.query(PaymentOrder).filter(PaymentOrder.out_trade_no == out_trade_no).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权操作此订单")
+    
+    if order.status == "paid":
+        return {"message": "订单已支付", "status": order.status}
+    
+    # 如果是测试订单，不查询微信
+    if order.is_test:
+        return {"message": "测试订单请使用 Mock 回调", "status": order.status}
+    
+    # 调用微信支付查询接口
+    success, data = query_order(out_trade_no)
+    
+    if not success or not data:
+        raise HTTPException(status_code=500, detail="查询微信支付订单失败")
+    
+    trade_state = data.get("trade_state")
+    
+    if trade_state == "SUCCESS":
+        order.status = "paid"
+        order.paid_at = datetime.utcnow()
+        
+        # 发放订阅
+        user = db.query(User).filter(User.id == order.user_id).first()
+        if user:
+            grant_or_extend_subscription(
+                db,
+                user=user,
+                vip_level=order.vip_level,
+                duration_months=order.duration_months,
+            )
+        db.commit()
+        return {"message": "订单已支付成功", "status": "paid", "trade_state": trade_state}
+    
+    elif trade_state in ("CLOSED", "REVOKED", "PAYERROR"):
+        order.status = "failed"
+        order.note = f"支付失败: {trade_state}"
+        db.commit()
+        return {"message": "订单支付失败", "status": "failed", "trade_state": trade_state}
+    
+    else:
+        return {"message": f"订单状态: {trade_state}", "status": order.status, "trade_state": trade_state}
+
+
 @router.post("/wechat/create", response_model=CreateOrderResult)
 async def create_wechat_order(
     payload: OrderCreate,
@@ -269,25 +328,40 @@ async def wechat_notify_real(
     """
     import json
     import logging
-    from backend.services.wechat_pay import verify_and_decrypt_callback
     
     logger = logging.getLogger(__name__)
     
-    # 获取请求头和请求体
-    headers = dict(request.headers)
+    # 获取请求体
     body = await request.body()
     body_str = body.decode("utf-8")
     
-    logger.info(f"收到微信支付回调: headers={headers}")
+    # 获取微信支付需要的请求头（注意 Starlette 会把 header 名转成小写）
+    headers = {
+        "Wechatpay-Timestamp": request.headers.get("wechatpay-timestamp", ""),
+        "Wechatpay-Nonce": request.headers.get("wechatpay-nonce", ""),
+        "Wechatpay-Signature": request.headers.get("wechatpay-signature", ""),
+        "Wechatpay-Serial": request.headers.get("wechatpay-serial", ""),
+        "Wechatpay-Signature-Type": request.headers.get("wechatpay-signature-type", "WECHATPAY2-SHA256-RSA2048"),
+    }
     
-    # 验签并解密
-    success, data = verify_and_decrypt_callback(headers, body_str)
+    logger.info(f"收到微信支付回调: headers={headers}, body_length={len(body_str)}")
     
-    if not success or not data:
-        logger.error("微信支付回调验签失败")
-        return {"code": "FAIL", "message": "验签失败"}
+    # 使用 wechatpayv3 SDK 验签并解密
+    try:
+        from backend.services.wechat_pay import get_wxpay
+        wxpay = get_wxpay()
+        result = wxpay.callback(headers=headers, body=body_str)
+        
+        if not result:
+            logger.error("微信支付回调验签失败: result is None")
+            return {"code": "FAIL", "message": "验签失败"}
+        
+        data = result
+        logger.info(f"微信支付回调解密成功: {data}")
+    except Exception as e:
+        logger.exception(f"微信支付回调验签异常: {e}")
+        return {"code": "FAIL", "message": f"验签异常: {str(e)}"}
     
-    logger.info(f"微信支付回调解密成功: {data}")
     
     # 获取订单号和支付状态
     out_trade_no = data.get("out_trade_no")
