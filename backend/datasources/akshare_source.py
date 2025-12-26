@@ -221,7 +221,7 @@ class AKShareDataSource(DataSourceBase):
             # stock_zh_index_spot 返回的是主流指数
             df = await loop.run_in_executor(
                 None,
-                lambda: self._ak.stock_zh_index_spot()
+                lambda: self._ak.stock_zh_index_spot_sina()
             )
             
             if df is None or df.empty:
