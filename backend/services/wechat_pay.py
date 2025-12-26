@@ -56,35 +56,40 @@ def get_wxpay() -> WeChatPay:
         "商户私钥"
     )
     
-    # 设置证书缓存目录（SDK 会自动下载和管理平台证书）
-    cert_dir = None
-    if settings.WECHAT_PAY_PLATFORM_CERT_PATH:
-        cert_path = Path(settings.WECHAT_PAY_PLATFORM_CERT_PATH)
-        # 尝试 Docker 路径
-        docker_cert_dir = Path("/app") / cert_path.parent
-        if docker_cert_dir.exists():
-            cert_dir = str(docker_cert_dir)
-        elif cert_path.parent.exists():
-            cert_dir = str(cert_path.parent)
+    # 判断是否使用公钥模式（PUB_KEY_ID_ 开头）
+    is_public_key_mode = (
+        settings.WECHAT_PAY_PLATFORM_SERIAL_NO and 
+        settings.WECHAT_PAY_PLATFORM_SERIAL_NO.startswith("PUB_KEY_ID_")
+    )
     
-    # 如果没有证书目录，创建一个临时目录
-    if not cert_dir:
+    init_params = {
+        "wechatpay_type": WeChatPayType.NATIVE,
+        "mchid": settings.WECHAT_PAY_MCHID,
+        "private_key": private_key,
+        "cert_serial_no": settings.WECHAT_PAY_MERCHANT_SERIAL_NO,
+        "apiv3_key": settings.WECHAT_PAY_API_V3_KEY,
+        "appid": settings.WECHAT_PAY_APPID_MP,
+        "notify_url": settings.WECHAT_PAY_NOTIFY_URL,
+        "logger": logger,
+    }
+    
+    if is_public_key_mode:
+        # 公钥模式：使用 public_key 和 public_key_id
+        logger.info("使用微信支付平台公钥模式初始化")
+        public_key = _load_file_content(
+            settings.WECHAT_PAY_PLATFORM_CERT_PATH,
+            "微信支付平台公钥"
+        )
+        init_params["public_key"] = public_key
+        init_params["public_key_id"] = settings.WECHAT_PAY_PLATFORM_SERIAL_NO
+    else:
+        # 证书模式：使用 cert_dir 自动下载平台证书
+        logger.info("使用微信支付平台证书模式初始化")
         cert_dir = "/app/data/wechat_certs"
         Path(cert_dir).mkdir(parents=True, exist_ok=True)
+        init_params["cert_dir"] = cert_dir
     
-    logger.info(f"微信支付证书目录: {cert_dir}")
-    
-    _wxpay_instance = WeChatPay(
-        wechatpay_type=WeChatPayType.NATIVE,
-        mchid=settings.WECHAT_PAY_MCHID,
-        private_key=private_key,
-        cert_serial_no=settings.WECHAT_PAY_MERCHANT_SERIAL_NO,
-        apiv3_key=settings.WECHAT_PAY_API_V3_KEY,
-        appid=settings.WECHAT_PAY_APPID_MP,
-        notify_url=settings.WECHAT_PAY_NOTIFY_URL,
-        cert_dir=cert_dir,
-        logger=logger,
-    )
+    _wxpay_instance = WeChatPay(**init_params)
     
     return _wxpay_instance
 
