@@ -69,13 +69,22 @@ def get_vip_stock_limit(db: Session, vip_level: int) -> int:
 
 def _cleanup_invalid_allocations(db: Session, user_id: Optional[int] = None) -> int:
     """删除指向已删除/停用股票的分配记录，避免占位."""
-    query = (
-        db.query(Allocation)
-        .outerjoin(Stock, Allocation.stock_id == Stock.id)
-        .filter(or_(Stock.id == None, Stock.is_active == False))
+    # Find invalid stock IDs (either non-existent or inactive)
+    invalid_stock_subquery = db.query(Stock.id).filter(Stock.is_active == False)
+    
+    # 1. Delete allocations where stock_id is not in Stock table (orphaned)
+    # 2. Delete allocations where stock_id points to inactive stock
+    
+    query = db.query(Allocation).filter(
+        or_(
+            ~Allocation.stock_id.in_(db.query(Stock.id)),  # Orphaned
+            Allocation.stock_id.in_(invalid_stock_subquery) # Inactive
+        )
     )
+
     if user_id:
         query = query.filter(Allocation.user_id == user_id)
+        
     removed = query.delete(synchronize_session=False)
     if removed:
         db.commit()
