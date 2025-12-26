@@ -364,8 +364,13 @@ async def wechat_notify_real(
     
     
     # 获取订单号和支付状态
-    out_trade_no = data.get("out_trade_no")
-    trade_state = data.get("trade_state")
+    # 获取订单号和支付状态
+    # 注意：wechatpayv3 callback 返回的数据结构可能包含 resource 字段，
+    # 其中 resource 字段可能是包含支付详情的字典
+    resource = data.get("resource") if isinstance(data.get("resource"), dict) else data
+    
+    out_trade_no = resource.get("out_trade_no")
+    trade_state = resource.get("trade_state")
     
     if not out_trade_no:
         logger.error("解密后缺少订单号")
