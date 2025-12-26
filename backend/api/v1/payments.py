@@ -9,7 +9,7 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.orm import Session
 
 from backend.api.v1.auth import get_current_user
@@ -28,21 +28,25 @@ class PaymentOrder(Base):
     __tablename__ = "payment_orders"
     
     id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(20), nullable=False, default="wechat")  # wechat/alipay
+    channel = Column(String(20), nullable=False, default="native")  # native/h5/jsapi
     out_trade_no = Column(String(64), unique=True, nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     vip_level = Column(Integer, nullable=False)
-    amount_fen = Column(Integer, nullable=False)  # 金额（分）
     duration_months = Column(Integer, nullable=False, default=3)
-    channel = Column(String(32), default="native")  # native/h5/jsapi
-    status = Column(String(32), default="pending")  # pending/paid/failed/cancelled
+    amount_fen = Column(Integer, nullable=False)  # 金额（分）
+    status = Column(String(20), nullable=False, default="pending")  # pending/paid/failed/cancelled
+    is_test = Column(Boolean, nullable=False, default=False)  # 是否测试订单
+    paid_at = Column(DateTime)
+    note = Column(String(255))  # 备注
+    raw_notify = Column(Text)  # 原始回调数据
+    
     prepay_id = Column(String(128))
     code_url = Column(String(256))
     h5_url = Column(String(512))
-    is_test = Column(Integer, default=0)  # 是否测试订单
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    paid_at = Column(DateTime)
 
 
 # ============ Schemas ============
@@ -148,6 +152,7 @@ async def create_wechat_order(
     out_trade_no = _generate_trade_no()
     
     order = PaymentOrder(
+        provider="wechat",
         out_trade_no=out_trade_no,
         user_id=current_user.id,
         vip_level=payload.vip_level,
@@ -155,7 +160,7 @@ async def create_wechat_order(
         duration_months=duration_months,
         channel=payload.channel,
         status="pending",
-        is_test=1 if is_mock else 0,
+        is_test=is_mock,
     )
     
     pay_response = PayResponse()
