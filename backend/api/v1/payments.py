@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.orm import Session
@@ -143,6 +143,9 @@ async def create_wechat_order(
     db: Session = Depends(get_db),
 ):
     """创建微信支付订单"""
+    from backend.models.vip_config import VipConfig
+    from backend.services.wechat_pay import create_native_order, create_h5_order
+    
     price_fen, duration_months, enabled = _get_price_for_level(db, payload.vip_level)
     
     if not enabled or price_fen <= 0:
@@ -150,6 +153,11 @@ async def create_wechat_order(
     
     is_mock = _is_mock_mode()
     out_trade_no = _generate_trade_no()
+    
+    # 获取 VIP 等级名称用于订单描述
+    vip_config = db.query(VipConfig).filter(VipConfig.level == payload.vip_level).first()
+    vip_name = vip_config.name if vip_config else f"VIP{payload.vip_level}"
+    description = f"Wind Automation {vip_name} - {duration_months}个月"
     
     order = PaymentOrder(
         provider="wechat",
@@ -173,8 +181,33 @@ async def create_wechat_order(
         pay_response.code_url = order.code_url
     else:
         # 真实支付模式：调用微信支付 API
-        # TODO: 集成真实微信支付
-        raise HTTPException(status_code=501, detail="真实微信支付尚未实现，请开启 WECHAT_PAY_MOCK=true")
+        if payload.channel == "native":
+            success, msg, code_url = create_native_order(
+                out_trade_no=out_trade_no,
+                description=description,
+                amount_fen=price_fen,
+            )
+            if not success:
+                raise HTTPException(status_code=500, detail=msg)
+            order.code_url = code_url
+            pay_response.code_url = code_url
+            
+        elif payload.channel == "h5":
+            # H5 支付需要用户 IP，这里用占位符，实际应从 request 获取
+            success, msg, h5_url = create_h5_order(
+                out_trade_no=out_trade_no,
+                description=description,
+                amount_fen=price_fen,
+                payer_ip="127.0.0.1",  # TODO: 从请求头获取真实 IP
+            )
+            if not success:
+                raise HTTPException(status_code=500, detail=msg)
+            order.h5_url = h5_url
+            pay_response.h5_url = h5_url
+            
+        else:
+            # JSAPI 需要 openid，暂不支持
+            raise HTTPException(status_code=400, detail="JSAPI 支付需要微信 OpenID，请使用 Native 或 H5 支付")
     
     db.add(order)
     db.commit()
@@ -183,16 +216,18 @@ async def create_wechat_order(
     return CreateOrderResult(order=order, pay=pay_response)
 
 
-@router.post("/wechat/notify")
-async def wechat_notify(
+@router.post("/wechat/notify/mock")
+async def wechat_notify_mock(
     payload: MockNotify,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
     """
-    处理支付回调（Mock 模式下用于模拟支付成功）
-    真实模式下应由微信服务器调用，需要验签
+    Mock 支付回调（仅在 Mock 模式下使用，用于测试）
     """
+    if not _is_mock_mode():
+        raise HTTPException(status_code=403, detail="真实支付模式下请勿使用 Mock 回调")
+    
     order = db.query(PaymentOrder).filter(PaymentOrder.out_trade_no == payload.out_trade_no).first()
     if not order:
         raise HTTPException(status_code=404, detail="订单不存在")
@@ -221,3 +256,76 @@ async def wechat_notify(
     
     db.commit()
     return {"message": "支付状态已更新", "status": order.status}
+
+
+@router.post("/wechat/notify")
+async def wechat_notify_real(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    真实微信支付回调（由微信服务器调用）
+    需要验签解密
+    """
+    import json
+    import logging
+    from backend.services.wechat_pay import verify_and_decrypt_callback
+    
+    logger = logging.getLogger(__name__)
+    
+    # 获取请求头和请求体
+    headers = dict(request.headers)
+    body = await request.body()
+    body_str = body.decode("utf-8")
+    
+    logger.info(f"收到微信支付回调: headers={headers}")
+    
+    # 验签并解密
+    success, data = verify_and_decrypt_callback(headers, body_str)
+    
+    if not success or not data:
+        logger.error("微信支付回调验签失败")
+        return {"code": "FAIL", "message": "验签失败"}
+    
+    logger.info(f"微信支付回调解密成功: {data}")
+    
+    # 获取订单号和支付状态
+    out_trade_no = data.get("out_trade_no")
+    trade_state = data.get("trade_state")
+    
+    if not out_trade_no:
+        return {"code": "FAIL", "message": "缺少订单号"}
+    
+    order = db.query(PaymentOrder).filter(PaymentOrder.out_trade_no == out_trade_no).first()
+    if not order:
+        logger.error(f"订单不存在: {out_trade_no}")
+        return {"code": "FAIL", "message": "订单不存在"}
+    
+    # 保存原始回调数据
+    order.raw_notify = json.dumps(data, ensure_ascii=False)
+    
+    if order.status == "paid":
+        # 已处理过，直接返回成功
+        return {"code": "SUCCESS", "message": "成功"}
+    
+    if trade_state == "SUCCESS":
+        order.status = "paid"
+        order.paid_at = datetime.utcnow()
+        
+        # 发放订阅
+        user = db.query(User).filter(User.id == order.user_id).first()
+        if user:
+            grant_or_extend_subscription(
+                db,
+                user=user,
+                vip_level=order.vip_level,
+                duration_months=order.duration_months,
+            )
+        logger.info(f"订单支付成功: {out_trade_no}")
+    elif trade_state in ("CLOSED", "REVOKED", "PAYERROR"):
+        order.status = "failed"
+        order.note = f"支付失败: {trade_state}"
+        logger.info(f"订单支付失败: {out_trade_no}, state={trade_state}")
+    
+    db.commit()
+    return {"code": "SUCCESS", "message": "成功"}
